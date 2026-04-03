@@ -188,6 +188,10 @@ class SaveClipRequest(BaseModel):
     tag: str
     label: str = ""
 
+class AnalyseClipRequest(BaseModel):
+    clip_path: str
+    type: str  # "attack" or "defence"
+
 
 # --- Endpoints ---
 
@@ -321,3 +325,25 @@ async def save_clip(req: SaveClipRequest):
 def get_clips():
     response = supabase.table("clips").select("*").order("created_at", desc=True).execute()
     return response.data
+
+
+@app.post("/analyse/clip")
+async def analyse_clip(req: AnalyseClipRequest):
+    if req.type not in ("attack", "defence"):
+        raise HTTPException(status_code=400, detail="type must be 'attack' or 'defence'")
+
+    video_bytes = supabase.storage.from_("match-clips").download(req.clip_path)
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        tmp.write(video_bytes)
+        tmp_path = tmp.name
+
+    try:
+        if req.type == "attack":
+            result = run_analysis(tmp_path, ATTACK_COACH_PROFILE, ATTACK_INSTRUCTIONS, "attack")
+        else:
+            result = run_analysis(tmp_path, DEFENCE_COACH_PROFILE, DEFENCE_INSTRUCTIONS, "defence")
+    finally:
+        os.unlink(tmp_path)
+
+    return {"status": "success", "analysis": result, "type": req.type}

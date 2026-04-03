@@ -1,31 +1,27 @@
-import Link from "next/link";
-
 export default function Home() {
   return (
-    <main className="flex flex-col items-center justify-center flex-1 min-h-screen px-6 text-center">
-      <div className="max-w-xl w-full">
-        <div className="mb-3">
-          <span className="inline-block w-10 h-1 bg-amber rounded-full" />
-        </div>
-        <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight mb-4">
+    <main className="flex flex-col items-center justify-center flex-1 px-6 text-center py-20">
+      <div className="max-w-md w-full">
+        <span className="inline-block w-10 h-1 bg-amber rounded-full mb-4" />
+        <h1 className="text-4xl font-bold text-white tracking-tight mb-3">
           AI Rugby Coach
         </h1>
-        <p className="text-white/60 text-lg mb-10">
-          Analysis with AI, delivered in plain english
+        <p className="text-white/50 text-base">
+          Upload a match, clip your sequences, then analyse attack and defence with AI.
         </p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <Link
-            href="/analyse"
-            className="inline-block bg-amber text-navy font-semibold text-base px-8 py-3 rounded-lg hover:brightness-110 transition-all"
-          >
-            Analyse a Clip
-          </Link>
-          <Link
-            href="/clipping"
-            className="inline-block bg-white/10 text-white font-semibold text-base px-8 py-3 rounded-lg hover:bg-white/20 transition-all"
-          >
-            Clipping Tool
-          </Link>
+        <div className="mt-8 grid grid-cols-1 gap-3 text-left">
+          {[
+            { step: "1", title: "Clipping", desc: "Upload a match and mark in/out points to save clips." },
+            { step: "2", title: "Attack / Defence", desc: "Browse your saved clips and run AI analysis." },
+          ].map(({ step, title, desc }) => (
+            <div key={step} className="flex gap-4 bg-white/5 border border-white/10 rounded-xl p-4">
+              <span className="text-amber font-bold text-lg leading-none mt-0.5">{step}</span>
+              <div>
+                <p className="text-white font-semibold text-sm">{title}</p>
+                <p className="text-white/40 text-sm mt-0.5">{desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </main>
