@@ -13,12 +13,20 @@ export default function Home() {
         <p className="text-white/60 text-lg mb-10">
           Analysis with AI, delivered in plain english
         </p>
-        <Link
-          href="/analyse"
-          className="inline-block bg-amber text-navy font-semibold text-base px-8 py-3 rounded-lg hover:brightness-110 transition-all"
-        >
-          Analyse a Clip
-        </Link>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            href="/analyse"
+            className="inline-block bg-amber text-navy font-semibold text-base px-8 py-3 rounded-lg hover:brightness-110 transition-all"
+          >
+            Analyse a Clip
+          </Link>
+          <Link
+            href="/clipping"
+            className="inline-block bg-white/10 text-white font-semibold text-base px-8 py-3 rounded-lg hover:bg-white/20 transition-all"
+          >
+            Clipping Tool
+          </Link>
+        </div>
       </div>
     </main>
   );

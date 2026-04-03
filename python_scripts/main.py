@@ -1,10 +1,13 @@
 import os
 import time
 import tempfile
+import subprocess
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from google import genai
 from google.genai import types
 from supabase import create_client
@@ -30,6 +33,16 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=True,
 )
+
+# --- Ensure storage buckets exist ---
+
+def ensure_bucket(name: str):
+    buckets = supabase.storage.list_buckets()
+    existing = [b.name for b in buckets]
+    if name not in existing:
+        supabase.storage.create_bucket(name, options={"public": True})
+
+ensure_bucket("match-clips")
 
 # --- Coach profiles ---
 
@@ -166,6 +179,16 @@ ANALYSIS INSTRUCTIONS
     return response.text
 
 
+# --- Request models ---
+
+class SaveClipRequest(BaseModel):
+    match_path: str
+    start_time: float
+    end_time: float
+    tag: str
+    label: str = ""
+
+
 # --- Endpoints ---
 
 @app.get("/health")
@@ -205,3 +228,96 @@ async def analyse_defence(file: UploadFile = File(...)):
         os.unlink(tmp_path)
 
     return {"status": "success", "analysis": analysis, "type": "defence"}
+
+
+@app.post("/upload/match")
+async def upload_match(file: UploadFile = File(...)):
+    if not file.filename.endswith((".mp4", ".mov")):
+        raise HTTPException(status_code=400, detail="Only .mp4 and .mov files are supported")
+
+    data = await file.read()
+    storage_path = f"matches/{file.filename}"
+
+    supabase.storage.from_("match-clips").upload(
+        path=storage_path,
+        file=data,
+        file_options={"content-type": file.content_type or "video/mp4", "upsert": "true"},
+    )
+
+    public_url = supabase.storage.from_("match-clips").get_public_url(storage_path)
+
+    return {"storage_path": storage_path, "public_url": public_url}
+
+
+@app.post("/clips/save")
+async def save_clip(req: SaveClipRequest):
+    if req.tag not in ("attack", "defence"):
+        raise HTTPException(status_code=400, detail="tag must be 'attack' or 'defence'")
+
+    if req.end_time <= req.start_time:
+        raise HTTPException(status_code=400, detail="end_time must be greater than start_time")
+
+    # Download the source video from Supabase storage
+    video_bytes = supabase.storage.from_("match-clips").download(req.match_path)
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as src_tmp:
+        src_tmp.write(video_bytes)
+        src_path = src_tmp.name
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    clip_filename = f"{timestamp}_{req.tag}.mp4"
+    clip_storage_path = f"clips/{clip_filename}"
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as dst_tmp:
+        dst_path = dst_tmp.name
+
+    try:
+        duration = req.end_time - req.start_time
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-ss", str(req.start_time),
+                "-i", src_path,
+                "-t", str(duration),
+                "-c", "copy",
+                dst_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"FFmpeg error: {result.stderr}")
+
+        with open(dst_path, "rb") as f:
+            clip_bytes = f.read()
+
+        supabase.storage.from_("match-clips").upload(
+            path=clip_storage_path,
+            file=clip_bytes,
+            file_options={"content-type": "video/mp4", "upsert": "true"},
+        )
+
+        clip_url = supabase.storage.from_("match-clips").get_public_url(clip_storage_path)
+
+        record = supabase.table("clips").insert({
+            "match_path": req.match_path,
+            "clip_path": clip_storage_path,
+            "clip_url": clip_url,
+            "start_time": req.start_time,
+            "end_time": req.end_time,
+            "tag": req.tag,
+            "label": req.label or None,
+        }).execute()
+
+        return record.data[0]
+
+    finally:
+        os.unlink(src_path)
+        os.unlink(dst_path)
+
+
+@app.get("/clips")
+def get_clips():
+    response = supabase.table("clips").select("*").order("created_at", desc=True).execute()
+    return response.data
