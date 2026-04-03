@@ -1,5 +1,5 @@
-import ClipBrowser from "@/components/ClipBrowser";
+import ClipReviewPage from "@/components/ClipReviewPage";
 
 export default function AttackPage() {
-  return <ClipBrowser tag="attack" />;
+  return <ClipReviewPage tag="attack" />;
 }

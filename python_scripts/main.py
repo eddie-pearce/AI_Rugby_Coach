@@ -2,11 +2,13 @@ import os
 import time
 import tempfile
 import subprocess
+import json
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
@@ -34,7 +36,16 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-# --- Ensure storage buckets exist ---
+# --- Fix 2: Temp directory for local match video caching ---
+# Saves re-downloading the full match from Supabase every time a clip is cut.
+
+TEMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# In-memory map: storage_path → local temp file path
+temp_videos: dict[str, str] = {}
+
+# --- Ensure storage bucket exists ---
 
 def ensure_bucket(name: str):
     buckets = supabase.storage.list_buckets()
@@ -125,7 +136,7 @@ The number of points in each section should honestly reflect the quality of the 
 """.strip()
 
 
-# --- Shared analysis logic ---
+# --- Shared helpers ---
 
 def fetch_knowledge_base(category: str) -> str:
     response = supabase.table("rugby_knowledge").select(
@@ -139,10 +150,8 @@ def fetch_knowledge_base(category: str) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def run_analysis(video_path: str, coach_profile: str, instructions: str, category: str) -> str:
-    knowledge_base = fetch_knowledge_base(category)
-
-    prompt = f"""
+def assemble_prompt(coach_profile: str, knowledge_base: str, instructions: str) -> str:
+    return f"""
 COACH PROFILE
 =============
 {coach_profile}
@@ -156,27 +165,44 @@ ANALYSIS INSTRUCTIONS
 {instructions}
 """.strip()
 
+
+# --- Fix 3: Streaming analysis generator ---
+# Flash is used here for speed on single clip analysis.
+# Pro is reserved for session-level synthesis across multiple clips.
+
+def stream_analysis(video_path: str, coach_profile: str, instructions: str, category: str):
+    knowledge_base = fetch_knowledge_base(category)
+    prompt = assemble_prompt(coach_profile, knowledge_base, instructions)
+
+    yield f"data: {json.dumps({'status': 'Uploading to Gemini…'})}\n\n"
+
     video_file = gemini.files.upload(
         file=video_path,
         config=types.UploadFileConfig(mime_type="video/mp4"),
     )
+
+    yield f"data: {json.dumps({'status': 'Processing video…'})}\n\n"
 
     while video_file.state.name == "PROCESSING":
         time.sleep(3)
         video_file = gemini.files.get(name=video_file.name)
 
     if video_file.state.name == "FAILED":
-        raise RuntimeError(f"Gemini video processing failed: {video_file.state}")
+        yield f"data: {json.dumps({'error': 'Gemini video processing failed'})}\n\n"
+        return
 
-    response = gemini.models.generate_content(
-        model="gemini-2.5-pro",
+    yield f"data: {json.dumps({'status': 'Generating analysis…'})}\n\n"
+
+    # Fix 4: gemini-2.0-flash for speed on clip analysis (Pro reserved for session synthesis)
+    for chunk in gemini.models.generate_content_stream(
+        model="gemini-2.0-flash",
         contents=[
             types.Part.from_uri(file_uri=video_file.uri, mime_type="video/mp4"),
             prompt,
         ],
-    )
-
-    return response.text
+    ):
+        if chunk.text:
+            yield f"data: {json.dumps({'chunk': chunk.text})}\n\n"
 
 
 # --- Request models ---
@@ -188,9 +214,10 @@ class SaveClipRequest(BaseModel):
     tag: str
     label: str = ""
 
+
 class AnalyseClipRequest(BaseModel):
-    clip_path: str
-    type: str  # "attack" or "defence"
+    clip_id: str   # Supabase clips table record ID
+    clip_path: str  # Supabase storage path
 
 
 # --- Endpoints ---
@@ -209,12 +236,13 @@ async def analyse_attack(file: UploadFile = File(...)):
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    try:
-        analysis = run_analysis(tmp_path, ATTACK_COACH_PROFILE, ATTACK_INSTRUCTIONS, "attack")
-    finally:
-        os.unlink(tmp_path)
+    def generate():
+        try:
+            yield from stream_analysis(tmp_path, ATTACK_COACH_PROFILE, ATTACK_INSTRUCTIONS, "attack")
+        finally:
+            os.unlink(tmp_path)
 
-    return {"status": "success", "analysis": analysis, "type": "attack"}
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.post("/analyse/defence")
@@ -226,12 +254,13 @@ async def analyse_defence(file: UploadFile = File(...)):
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    try:
-        analysis = run_analysis(tmp_path, DEFENCE_COACH_PROFILE, DEFENCE_INSTRUCTIONS, "defence")
-    finally:
-        os.unlink(tmp_path)
+    def generate():
+        try:
+            yield from stream_analysis(tmp_path, DEFENCE_COACH_PROFILE, DEFENCE_INSTRUCTIONS, "defence")
+        finally:
+            os.unlink(tmp_path)
 
-    return {"status": "success", "analysis": analysis, "type": "defence"}
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.post("/upload/match")
@@ -240,7 +269,14 @@ async def upload_match(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only .mp4 and .mov files are supported")
 
     data = await file.read()
-    storage_path = f"matches/{file.filename}"
+    safe_filename = os.path.basename(file.filename)
+    storage_path = f"matches/{safe_filename}"
+
+    # Fix 2: Save local temp copy so clip cutting doesn't need to re-download
+    local_path = os.path.join(TEMP_DIR, safe_filename)
+    with open(local_path, "wb") as f:
+        f.write(data)
+    temp_videos[storage_path] = local_path
 
     supabase.storage.from_("match-clips").upload(
         path=storage_path,
@@ -257,16 +293,20 @@ async def upload_match(file: UploadFile = File(...)):
 async def save_clip(req: SaveClipRequest):
     if req.tag not in ("attack", "defence"):
         raise HTTPException(status_code=400, detail="tag must be 'attack' or 'defence'")
-
     if req.end_time <= req.start_time:
         raise HTTPException(status_code=400, detail="end_time must be greater than start_time")
 
-    # Download the source video from Supabase storage
-    video_bytes = supabase.storage.from_("match-clips").download(req.match_path)
-
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as src_tmp:
-        src_tmp.write(video_bytes)
-        src_path = src_tmp.name
+    # Fix 2: Use local temp file if available, fall back to Supabase download
+    local_match = temp_videos.get(req.match_path)
+    if local_match and os.path.exists(local_match):
+        src_path = local_match
+        cleanup_src = False
+    else:
+        video_bytes = supabase.storage.from_("match-clips").download(req.match_path)
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as src_tmp:
+            src_tmp.write(video_bytes)
+            src_path = src_tmp.name
+        cleanup_src = True
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     clip_filename = f"{timestamp}_{req.tag}.mp4"
@@ -317,7 +357,8 @@ async def save_clip(req: SaveClipRequest):
         return record.data[0]
 
     finally:
-        os.unlink(src_path)
+        if cleanup_src:
+            os.unlink(src_path)
         os.unlink(dst_path)
 
 
@@ -327,10 +368,24 @@ def get_clips():
     return response.data
 
 
+@app.get("/clips/{clip_id}")
+def get_clip(clip_id: str):
+    response = supabase.table("clips").select("*").eq("id", clip_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Clip not found")
+    return response.data[0]
+
+
 @app.post("/analyse/clip")
 async def analyse_clip(req: AnalyseClipRequest):
-    if req.type not in ("attack", "defence"):
-        raise HTTPException(status_code=400, detail="type must be 'attack' or 'defence'")
+    # Look up the clip tag from the DB to determine which profile/instructions to use
+    clip_record = supabase.table("clips").select("tag").eq("id", req.clip_id).execute()
+    if not clip_record.data:
+        raise HTTPException(status_code=404, detail="Clip not found")
+    clip_tag = clip_record.data[0]["tag"]
+
+    if clip_tag not in ("attack", "defence"):
+        raise HTTPException(status_code=400, detail="Invalid clip tag")
 
     video_bytes = supabase.storage.from_("match-clips").download(req.clip_path)
 
@@ -338,12 +393,47 @@ async def analyse_clip(req: AnalyseClipRequest):
         tmp.write(video_bytes)
         tmp_path = tmp.name
 
-    try:
-        if req.type == "attack":
-            result = run_analysis(tmp_path, ATTACK_COACH_PROFILE, ATTACK_INSTRUCTIONS, "attack")
-        else:
-            result = run_analysis(tmp_path, DEFENCE_COACH_PROFILE, DEFENCE_INSTRUCTIONS, "defence")
-    finally:
-        os.unlink(tmp_path)
+    coach_profile = ATTACK_COACH_PROFILE if clip_tag == "attack" else DEFENCE_COACH_PROFILE
+    instructions = ATTACK_INSTRUCTIONS if clip_tag == "attack" else DEFENCE_INSTRUCTIONS
 
-    return {"status": "success", "analysis": result, "type": req.type}
+    def generate():
+        full_text: list[str] = []
+        try:
+            for event in stream_analysis(tmp_path, coach_profile, instructions, clip_tag):
+                # Accumulate chunk text so we can save it after streaming completes
+                if event.startswith("data: "):
+                    try:
+                        payload = json.loads(event[6:].strip())
+                        if "chunk" in payload:
+                            full_text.append(payload["chunk"])
+                    except Exception:
+                        pass
+                yield event
+        finally:
+            os.unlink(tmp_path)
+            # Save the full analysis output to the clips record
+            if full_text:
+                try:
+                    supabase.table("clips").update(
+                        {"analysis_output": "".join(full_text)}
+                    ).eq("id", req.clip_id).execute()
+                except Exception:
+                    pass  # Don't fail the response if the DB save fails
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.delete("/temp/{filename}")
+def delete_temp(filename: str):
+    """Delete a cached temp match file when a session is done."""
+    local_path = os.path.join(TEMP_DIR, filename)
+    storage_path = f"matches/{filename}"
+
+    if storage_path in temp_videos:
+        del temp_videos[storage_path]
+
+    if os.path.exists(local_path):
+        os.unlink(local_path)
+        return {"deleted": filename}
+
+    return {"status": "not_found"}

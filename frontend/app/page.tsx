@@ -11,8 +11,9 @@ export default function Home() {
         </p>
         <div className="mt-8 grid grid-cols-1 gap-3 text-left">
           {[
-            { step: "1", title: "Clipping", desc: "Upload a match and mark in/out points to save clips." },
-            { step: "2", title: "Attack / Defence", desc: "Browse your saved clips and run AI analysis." },
+            { step: "1", title: "Clipping", desc: "Upload a match and mark in/out points to save attack and defence clips." },
+            { step: "2", title: "Analysis", desc: "Select a clip and run AI analysis. Results are saved automatically." },
+            { step: "3", title: "Attack / Defence", desc: "Browse your saved clips and review the AI analysis for each sequence." },
           ].map(({ step, title, desc }) => (
             <div key={step} className="flex gap-4 bg-white/5 border border-white/10 rounded-xl p-4">
               <span className="text-amber font-bold text-lg leading-none mt-0.5">{step}</span>
