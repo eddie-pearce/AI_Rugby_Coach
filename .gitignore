@@ -1,0 +1,19 @@
+# Environment variables
+.env
+*.env
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Video files
+*.mp4
+*.mov
+*.avi
+
+# Large embedded JSON files (contain vector embeddings)
+json/attack_chunks_embedded.json
+json/defence_chunks_embedded.json
+
+# Claude local settings
+.claude/settings.local.json
