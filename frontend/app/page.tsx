@@ -1,30 +1,118 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
+
 export default function Home() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+
   return (
-    <main className="flex flex-col items-center justify-center flex-1 px-6 text-center py-20">
-      <div className="max-w-md w-full">
-        <span className="inline-block w-10 h-1 bg-amber rounded-full mb-4" />
-        <h1 className="text-4xl font-bold text-white tracking-tight mb-3">
-          AI Rugby Coach
-        </h1>
-        <p className="text-white/50 text-base">
-          Upload a match, clip your sequences, then analyse attack and defence with AI.
-        </p>
-        <div className="mt-8 grid grid-cols-1 gap-3 text-left">
-          {[
-            { step: "1", title: "Clipping", desc: "Upload a match and mark in/out points to save attack and defence clips." },
-            { step: "2", title: "Analysis", desc: "Select a clip and run AI analysis. Results are saved automatically." },
-            { step: "3", title: "Attack / Defence", desc: "Browse your saved clips and review the AI analysis for each sequence." },
-          ].map(({ step, title, desc }) => (
-            <div key={step} className="flex gap-4 bg-white/5 border border-white/10 rounded-xl p-4">
-              <span className="text-amber font-bold text-lg leading-none mt-0.5">{step}</span>
-              <div>
-                <p className="text-white font-semibold text-sm">{title}</p>
-                <p className="text-white/40 text-sm mt-0.5">{desc}</p>
-              </div>
-            </div>
-          ))}
+    <div className="flex flex-col min-h-full bg-[#0a0a0a]">
+
+      {/* Top nav */}
+      <header className="w-full border-b border-white/10">
+        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div />
+          <div className="flex items-center gap-3">
+            {user ? (
+              <>
+                <span className="text-white/50 text-sm hidden sm:block truncate max-w-[200px]">
+                  {user.email}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-1.5 rounded-md border border-white/20 text-white/70 text-sm hover:border-white/40 hover:text-white transition-colors"
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="px-4 py-1.5 rounded-md border border-white/20 text-white/70 text-sm hover:border-white/40 hover:text-white transition-colors"
+                >
+                  Login
+                </Link>
+                <Link
+                  href="/signup"
+                  className="px-4 py-1.5 rounded-md bg-white text-black text-sm font-semibold hover:brightness-90 transition-all"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
+          </div>
         </div>
-      </div>
-    </main>
+      </header>
+
+      {/* Hero */}
+      <main className="flex flex-col items-center justify-center flex-1 px-6 text-center py-24">
+        <div className="max-w-2xl w-full">
+
+          <h1 className="text-5xl font-bold text-white tracking-tight mb-3">
+            BreakdownAI
+          </h1>
+
+          <p className="text-white/40 text-base font-normal mb-5 tracking-wide uppercase text-xs">
+            Analysis with AI, delivered in plain English
+          </p>
+
+          <p className="text-white/60 text-lg mb-10 max-w-xl mx-auto leading-relaxed">
+            Upload a match, clip your sequences, and get a full attack and defence report in minutes.
+          </p>
+
+          <Link
+            href={user ? "/clipping" : "/signup"}
+            className="inline-block px-6 py-3 rounded-md bg-white text-black text-sm font-semibold hover:brightness-90 transition-all"
+          >
+            Get Started
+          </Link>
+
+          {/* Steps */}
+          <div className="mt-16 grid grid-cols-1 gap-2 text-left max-w-lg mx-auto">
+            {[
+              { step: "1", title: "Clipping", desc: "Upload a match and mark in/out points to save attack and defence clips." },
+              { step: "2", title: "Analysis", desc: "Select a clip and run AI analysis. Results are saved automatically." },
+              { step: "3", title: "Reports", desc: "Generate a full attack or defence report synthesised across all clips from a match." },
+              { step: "4", title: "Matches", desc: "View all clips and reports for a match in one place — watch footage and read analysis side by side." },
+            ].map(({ step, title, desc }) => (
+              <div key={step} className="flex gap-4 bg-transparent border border-white/10 rounded-md px-4 py-3">
+                <span className="text-white/30 font-bold text-sm leading-none mt-0.5 w-4 shrink-0">{step}</span>
+                <div>
+                  <p className="text-white font-semibold text-sm">{title}</p>
+                  <p className="text-white/35 text-sm mt-0.5 leading-snug">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </main>
+
+    </div>
   );
 }

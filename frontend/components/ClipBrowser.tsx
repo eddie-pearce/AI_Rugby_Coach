@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 
 type Tag = "attack" | "defence";
 
@@ -69,7 +70,7 @@ export default function ClipBrowser({ tag }: { tag: Tag }) {
   const fetchClips = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/clips`);
+      const res = await apiFetch(`${API}/clips`);
       const data: Clip[] = await res.json();
       setClips(data.filter((c) => c.tag === tag));
     } catch {
@@ -100,7 +101,7 @@ export default function ClipBrowser({ tag }: { tag: Tag }) {
     setStatusMsg("");
 
     try {
-      const res = await fetch(`${API}/analyse/clip`, {
+      const res = await apiFetch(`${API}/analyse/clip`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clip_path: selected.clip_path, type: tag }),
@@ -149,7 +150,7 @@ export default function ClipBrowser({ tag }: { tag: Tag }) {
 
               {loading ? (
                 <div className="flex justify-center py-10">
-                  <div className="w-6 h-6 border-2 border-amber border-t-transparent rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : clips.length === 0 ? (
                 <p className="text-white/30 text-sm text-center py-10">
@@ -164,7 +165,7 @@ export default function ClipBrowser({ tag }: { tag: Tag }) {
                       <button
                         key={clip.id}
                         onClick={() => selectClip(clip)}
-                        className={`w-full text-left rounded-lg p-3 transition-all border ${isSelected ? "border-amber/50 bg-amber/5" : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"}`}
+                        className={`w-full text-left rounded-lg p-3 transition-all border ${isSelected ? "border-white/50 bg-white/5" : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"}`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tagColor}`}>{tagLabel}</span>
@@ -202,7 +203,7 @@ export default function ClipBrowser({ tag }: { tag: Tag }) {
                     <button
                       onClick={handleAnalyse}
                       disabled={waiting || streaming}
-                      className={`shrink-0 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${waiting || streaming ? "bg-white/10 text-white/30 cursor-not-allowed" : "bg-amber text-navy hover:brightness-110 cursor-pointer"}`}
+                      className={`shrink-0 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${waiting || streaming ? "bg-white/10 text-white/30 cursor-not-allowed" : "bg-white text-black hover:brightness-110 cursor-pointer"}`}
                     >
                       {waiting || streaming ? "Analysing…" : "Analyse"}
                     </button>
@@ -212,7 +213,7 @@ export default function ClipBrowser({ tag }: { tag: Tag }) {
                 {/* Spinner + status before first chunk arrives */}
                 {waiting && (
                   <div className="flex flex-col items-center gap-3 py-10">
-                    <div className="w-8 h-8 border-2 border-amber border-t-transparent rounded-full animate-spin" />
+                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     <p className="text-white/40 text-sm">{statusMsg || "Connecting…"}</p>
                   </div>
                 )}
@@ -227,9 +228,9 @@ export default function ClipBrowser({ tag }: { tag: Tag }) {
                 {analysis && (
                   <div>
                     <div className="flex items-center gap-3 mb-3">
-                      <span className="inline-block w-6 h-0.5 bg-amber" />
+                      <span className="inline-block w-6 h-0.5 bg-white" />
                       <h2 className="text-white font-semibold">{tagLabel} Analysis</h2>
-                      {streaming && <div className="w-3 h-3 border border-amber border-t-transparent rounded-full animate-spin" />}
+                      {streaming && <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />}
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-xl px-6 py-6 max-h-[60vh] overflow-y-auto">
                       <pre ref={analysisRef} className="text-white/85 text-sm leading-7 whitespace-pre-wrap font-sans">

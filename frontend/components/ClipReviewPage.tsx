@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 
 type Tag = "attack" | "defence";
 
@@ -31,7 +32,7 @@ export default function ClipReviewPage({ tag }: { tag: Tag }) {
   const fetchClips = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/clips`);
+      const res = await apiFetch(`${API}/clips`);
       const data: Clip[] = await res.json();
       setClips(data.filter((c) => c.tag === tag));
     } catch {
@@ -74,7 +75,7 @@ export default function ClipReviewPage({ tag }: { tag: Tag }) {
 
               {loading ? (
                 <div className="flex justify-center py-10">
-                  <div className="w-6 h-6 border-2 border-amber border-t-transparent rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : clips.length === 0 ? (
                 <p className="text-white/30 text-sm text-center py-10">
@@ -91,7 +92,7 @@ export default function ClipReviewPage({ tag }: { tag: Tag }) {
                         onClick={() => setSelected(clip)}
                         className={`w-full text-left rounded-lg p-3 transition-all border ${
                           isSelected
-                            ? "border-amber/50 bg-amber/5"
+                            ? "border-white/50 bg-white/5"
                             : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
                         }`}
                       >
@@ -107,7 +108,7 @@ export default function ClipReviewPage({ tag }: { tag: Tag }) {
                           <p className="text-white/80 text-sm font-medium truncate mt-1">{clip.label}</p>
                         )}
                         {clip.analysis_output && (
-                          <p className="text-amber/60 text-xs mt-1">✓ Analysed</p>
+                          <p className="text-white/60 text-xs mt-1">✓ Analysed</p>
                         )}
                       </button>
                     );
@@ -150,7 +151,7 @@ export default function ClipReviewPage({ tag }: { tag: Tag }) {
               ) : selected.analysis_output ? (
                 <>
                   <div className="flex items-center gap-3 mb-4">
-                    <span className="inline-block w-5 h-0.5 bg-amber" />
+                    <span className="inline-block w-5 h-0.5 bg-white" />
                     <h2 className="text-white font-semibold text-sm">{tagLabel} Analysis</h2>
                   </div>
                   <pre

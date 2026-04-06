@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, DragEvent, ChangeEvent } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 
 type AnalysisType = "attack" | "defence";
 
@@ -65,7 +66,7 @@ export default function AnalysePage() {
     formData.append("file", file);
 
     try {
-      const res = await fetch(`${API}/analyse/${analysisType}`, { method: "POST", body: formData });
+      const res = await apiFetch(`${API}/analyse/${analysisType}`, { method: "POST", body: formData });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -107,12 +108,12 @@ export default function AnalysePage() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors ${dragging ? "border-amber bg-amber/5" : file ? "border-amber/60 bg-white/5" : "border-white/20 bg-white/5 hover:border-white/40"}`}
+          className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors ${dragging ? "border-white bg-white/5" : file ? "border-white/60 bg-white/5" : "border-white/20 bg-white/5 hover:border-white/40"}`}
         >
           <input ref={inputRef} type="file" accept=".mp4" className="hidden" onChange={handleFileChange} />
           {file ? (
             <div>
-              <p className="text-amber font-medium text-lg">{file.name}</p>
+              <p className="text-white font-medium text-lg">{file.name}</p>
               <p className="text-white/40 text-sm mt-1">{(file.size / (1024 * 1024)).toFixed(1)} MB · Click to change</p>
             </div>
           ) : (
@@ -131,7 +132,7 @@ export default function AnalysePage() {
               <button
                 key={type}
                 onClick={() => setAnalysisType(type)}
-                className={`flex-1 py-3 rounded-lg font-semibold text-sm capitalize transition-all ${analysisType === type ? "bg-amber text-navy" : "bg-white/10 text-white/60 hover:bg-white/20 hover:text-white"}`}
+                className={`flex-1 py-3 rounded-lg font-semibold text-sm capitalize transition-all ${analysisType === type ? "bg-white text-black" : "bg-white/10 text-white/60 hover:bg-white/20 hover:text-white"}`}
               >
                 {type}
               </button>
@@ -143,7 +144,7 @@ export default function AnalysePage() {
         <button
           onClick={handleSubmit}
           disabled={!canSubmit}
-          className={`mt-6 w-full py-3 rounded-lg font-semibold text-base transition-all ${canSubmit ? "bg-amber text-navy hover:brightness-110 cursor-pointer" : "bg-white/10 text-white/30 cursor-not-allowed"}`}
+          className={`mt-6 w-full py-3 rounded-lg font-semibold text-base transition-all ${canSubmit ? "bg-white text-black hover:brightness-110 cursor-pointer" : "bg-white/10 text-white/30 cursor-not-allowed"}`}
         >
           {isRunning ? "Analysing…" : "Analyse"}
         </button>
@@ -151,7 +152,7 @@ export default function AnalysePage() {
         {/* Spinner + status before first chunk */}
         {waiting && (
           <div className="mt-10 flex flex-col items-center gap-4">
-            <div className="w-8 h-8 border-2 border-amber border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
             <p className="text-white/60 text-sm">{statusMsg || "Connecting…"}</p>
           </div>
         )}
@@ -166,9 +167,9 @@ export default function AnalysePage() {
         {analysis && (
           <div className="mt-10">
             <div className="flex items-center gap-3 mb-4">
-              <span className="inline-block w-6 h-0.5 bg-amber" />
+              <span className="inline-block w-6 h-0.5 bg-white" />
               <h2 className="text-white font-semibold text-lg capitalize">{analysisType} Analysis</h2>
-              {streaming && <div className="w-3 h-3 border border-amber border-t-transparent rounded-full animate-spin" />}
+              {streaming && <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />}
             </div>
             <div className="bg-white/5 rounded-xl px-6 py-6 border border-white/10 max-h-[60vh] overflow-y-auto">
               <pre ref={analysisRef} className="text-white/85 text-sm leading-7 whitespace-pre-wrap font-sans">

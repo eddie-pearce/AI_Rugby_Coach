@@ -29,3 +29,7 @@ env/
 node_modules/
 .next/
 .env.local
+
+# Temp match video cache (local only, not committed)
+python_scripts/temp/*
+!python_scripts/temp/.gitkeep
