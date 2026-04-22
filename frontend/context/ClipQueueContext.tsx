@@ -21,6 +21,8 @@ export interface QueueItem {
   tag: Tag;
   label: string;
   matchId: string | null;
+  phase: string;
+  field_zone: string;
   /** Blob URL — kept alive for the lifetime of the queue item */
   videoUrl: string;
   status: "queued" | "recording" | "uploading" | "done" | "failed";
@@ -254,6 +256,8 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
       formData.append("tag", item.tag);
       formData.append("label", item.label);
       if (item.matchId) formData.append("match_id", item.matchId);
+      if (item.phase) formData.append("phase", item.phase);
+      if (item.field_zone) formData.append("field_zone", item.field_zone);
 
       const res = await apiFetch(`${API}/clips/upload-direct`, {
         method: "POST",

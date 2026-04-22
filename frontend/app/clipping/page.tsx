@@ -307,6 +307,8 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
   const [markIn, setMarkIn] = useState<number | null>(null);
   const [markOut, setMarkOut] = useState<number | null>(null);
   const [tag, setTag] = useState<"attack" | "defence" | null>(null);
+  const [phase, setPhase] = useState<string>("");
+  const [fieldZone, setFieldZone] = useState<string>("");
   const [label, setLabel] = useState("");
   const [matchId, setMatchId] = useState<string | null>(null);
 
@@ -526,16 +528,16 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
   }
 
   function addToQueue() {
-    if (!videoUrl || markIn === null || markOut === null || !tag) return;
+    if (!videoUrl || markIn === null || markOut === null || !tag || !phase || !fieldZone) return;
     if (markOut <= markIn) return;
     const effectiveTag: Tag = clipMode === "opposition" ? `opp_${tag}` : tag;
-    ctxAddToQueue({ markIn, markOut, tag: effectiveTag, label, matchId });
+    ctxAddToQueue({ markIn, markOut, tag: effectiveTag, label, matchId, phase, field_zone: fieldZone });
     setMarkIn(null);
     setMarkOut(null);
     setLabel("");
   }
 
-  const canClip = !!videoUrl && markIn !== null && markOut !== null && markOut > markIn && !!tag;
+  const canClip = !!videoUrl && markIn !== null && markOut !== null && markOut > markIn && !!tag && !!phase && !!fieldZone;
 
   function resolveMatchName(id: string | null): string | null {
     if (!id) return null;
@@ -782,6 +784,39 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Phase */}
+                <div>
+                  <p className="text-white/40 text-xs mb-2">Phase <span className="text-red-400">*</span></p>
+                  <select
+                    value={phase}
+                    onChange={(e) => setPhase(e.target.value)}
+                    className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-white/50 appearance-none text-white [&>option]:bg-[#111] [&>option]:text-white"
+                  >
+                    <option value="" disabled>Select phase…</option>
+                    <option value="Set Piece — Scrum">Set Piece — Scrum</option>
+                    <option value="Set Piece — Lineout">Set Piece — Lineout</option>
+                    <option value="Phase Play / Breakdown">Phase Play / Breakdown</option>
+                    <option value="Transition">Transition</option>
+                    <option value="Kick Receipt / Counter Attack">Kick Receipt / Counter Attack</option>
+                  </select>
+                </div>
+
+                {/* Field Zone */}
+                <div>
+                  <p className="text-white/40 text-xs mb-2">Field Zone <span className="text-red-400">*</span></p>
+                  <select
+                    value={fieldZone}
+                    onChange={(e) => setFieldZone(e.target.value)}
+                    className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-white/50 appearance-none text-white [&>option]:bg-[#111] [&>option]:text-white"
+                  >
+                    <option value="" disabled>Select field zone…</option>
+                    <option value="Own 22">Own 22</option>
+                    <option value="Own Half (22m–halfway)">Own Half (22m–halfway)</option>
+                    <option value="Opposition Half (halfway–22m)">Opposition Half (halfway–22m)</option>
+                    <option value="Opposition 22">Opposition 22</option>
+                  </select>
                 </div>
 
                 {/* Label */}

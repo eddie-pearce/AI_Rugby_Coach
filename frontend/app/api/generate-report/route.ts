@@ -63,10 +63,10 @@ export async function POST(req: NextRequest) {
 
   const supabase = makeServiceSupabase();
 
-  // Fetch clips with timestamps and IDs so we can embed them in report themes
+  // Fetch clips with all fields needed for synthesis
   const { data: clips, error: clipsError } = await supabase
     .from("clips")
-    .select("id, clip_url, start_time, end_time, analysis_output, pass_1_output")
+    .select("id, clip_url, start_time, end_time, analysis_output, pass_1_output, phase, field_zone")
     .eq("match_id", match_id)
     .eq("user_id", user_id)
     .eq("tag", label.toLowerCase())
@@ -94,25 +94,74 @@ export async function POST(req: NextRequest) {
     clips.map((c: { id: string; clip_url: string }) => [c.id, c.clip_url])
   );
 
-  // Format clips for the prompt — include clip_id so Claude can reference them
   const phase = label.toLowerCase();
-  const clipLines = clips.map((c: {
+
+  // Aggregate Pass 1 tactical themes and systems across all clips for the synthesis header
+  const allThemes: string[] = [];
+  const allSystems: string[] = [];
+  const phaseCounts: Record<string, number> = {};
+
+  type ClipRow = {
     id: string;
+    clip_url: string;
     start_time: number;
     end_time: number;
     analysis_output: string;
-    pass_1_output?: { quality_indicators?: string } | null;
-  }) => {
-    let parsed: Record<string, unknown> = {};
-    try { parsed = JSON.parse(c.analysis_output); } catch { /* use empty */ }
-    const quality = c.pass_1_output?.quality_indicators ?? "mixed";
+    phase?: string | null;
+    field_zone?: string | null;
+    pass_1_output?: Record<string, unknown> | null;
+  };
+
+  for (const c of clips as ClipRow[]) {
+    const p1 = c.pass_1_output ?? {};
+    const themes = (p1.tactical_themes as string[] | undefined) ?? [];
+    themes.forEach((t: string) => { if (!allThemes.includes(t)) allThemes.push(t); });
+    const system = (p1.attacking_system ?? p1.defensive_system) as string | undefined;
+    if (system && !allSystems.includes(system)) allSystems.push(system);
+    const clipPhase = c.phase ?? "Unspecified";
+    phaseCounts[clipPhase] = (phaseCounts[clipPhase] ?? 0) + 1;
+  }
+
+  const phaseDistribution = Object.entries(phaseCounts)
+    .map(([p, n]) => `${p}: ${n} clip${n !== 1 ? "s" : ""}`)
+    .join(", ");
+
+  // Format clips for synthesis — include full Pass 1 + Pass 2 data
+  const clipLines = (clips as ClipRow[]).map((c) => {
+    let p2: Record<string, unknown> = {};
+    try { p2 = JSON.parse(c.analysis_output); } catch { /* use empty */ }
+    const p1 = c.pass_1_output ?? {};
     const ts = clipTimestamp(c.start_time, c.end_time);
-    return (
-      `clip_id: "${c.id}" | timestamp: "${ts}" | quality: ${quality}\n` +
-      `intent: ${parsed.intent ?? ""}\n` +
-      `what_worked: ${JSON.stringify(parsed.what_worked ?? [])}\n` +
-      `what_didnt_work: ${JSON.stringify(parsed.what_didnt_work ?? [])}`
-    );
+    const quality = (p1.quality_indicators as string | undefined) ?? "mixed";
+
+    const lines: string[] = [
+      `clip_id: "${c.id}" | timestamp: "${ts}" | quality: ${quality} | significance: ${p2.significance ?? "?"}`,
+    ];
+    if (c.phase) lines.push(`phase: ${c.phase}`);
+    if (c.field_zone) lines.push(`field_zone: ${c.field_zone}`);
+
+    // Pass 1 structural fields
+    const system = (p1.attacking_system ?? p1.defensive_system) as string | undefined;
+    if (system) lines.push(`system: ${system}`);
+    if (p1.pre_play_structure) lines.push(`structure: ${p1.pre_play_structure}`);
+    if (p1.decision_point) lines.push(`decision_point: ${p1.decision_point}`);
+    if (p1.breakdown_moment) lines.push(`breakdown_moment: ${p1.breakdown_moment}`);
+    const p1Themes = p1.tactical_themes as string[] | undefined;
+    if (p1Themes?.length) lines.push(`tactical_themes: ${p1Themes.join(", ")}`);
+    const p1Patterns = p1.patterns_observed as string[] | undefined;
+    if (p1Patterns?.length) lines.push(`patterns: ${p1Patterns.join(" | ")}`);
+
+    // Pass 2 analysis
+    if (p2.intent) lines.push(`intent: ${p2.intent}`);
+    if (p2.tactical_breakdown) lines.push(`tactical_breakdown: ${p2.tactical_breakdown}`);
+    if (p2.execution_analysis) lines.push(`execution_analysis: ${p2.execution_analysis}`);
+    const worked = (p2.what_worked as string[] | undefined) ?? [];
+    const didnt = (p2.what_didnt_work as string[] | undefined) ?? [];
+    if (worked.length) lines.push(`what_worked: ${JSON.stringify(worked)}`);
+    if (didnt.length) lines.push(`what_didnt_work: ${JSON.stringify(didnt)}`);
+    if (p2.coaching_insight) lines.push(`coaching_insight: ${p2.coaching_insight}`);
+
+    return lines.join("\n");
   }).join("\n\n---\n\n");
 
   const contextHeader = [
@@ -120,47 +169,68 @@ export async function POST(req: NextRequest) {
     coach_philosophy ? `Coach philosophy (contextual lens only): ${coach_philosophy}` : "",
   ].filter(Boolean).join("\n");
 
-  const synthesisPrompt = `You are a rugby head coach producing a structured post-match ${phase} coaching report.
-${contextHeader ? `\n${contextHeader}\n` : ""}
-Below are ${phase} clips from the match. Each has been individually analysed.
+  const systemPrompt = `You are an elite rugby performance analyst producing professional coaching reports for a semi-professional coaching team.
 
-CLIPS:
+Your job is to analyse tactical patterns and strategic tendencies — not to describe events. A coach already knows what happened. They need to know WHY it happened: what system was in play, where the structure broke down, whether this is a systemic issue or an execution error, and what the team needs to do about it.
+
+Depth over breadth. Two well-evidenced themes with genuine tactical insight are worth more than five surface observations.
+Do not describe end results. Analyse causes and structural patterns.
+High-significance clips (8–10) carry more evidential weight — prioritise them when selecting clips per theme.
+Return ONLY valid JSON. No markdown. No preamble.`;
+
+  const synthesisPrompt = `${contextHeader ? `${contextHeader}\n\n` : ""}DOMINANT THEMES OBSERVED ACROSS MATCH (from video analysis):
+${allThemes.length ? allThemes.join(", ") : "None identified"}
+
+SYSTEMS OBSERVED:
+${allSystems.length ? allSystems.join(", ") : "Not identified"}
+
+PHASE DISTRIBUTION:
+${phaseDistribution || "Not recorded"}
+
+CLIPS (${(clips as ClipRow[]).length} total — each includes video analysis brief and coaching analysis):
 ${clipLines}
 
-YOUR TASK
-Identify recurring tactical themes across these clips — not individual events.
-Group clips under themes and place each theme in the correct subsection.
+STEP 1 — ANALYSIS (respond in plain text before the JSON)
+Before writing the report, reason through the following:
+- What are the 2–4 dominant recurring themes across ALL clips? What connects them tactically?
+- Which clips cluster together and why — what is the shared structural pattern?
+- Is the dominant pattern a SYSTEM issue (design or structure) or an EXECUTION issue (individual skill or decision)?
+- What is the single most important message for the coaching team this week?
+- What is the balance between set piece and open play issues?
+- Which themes have the strongest clip evidence (high significance scores, multiple clips)?
+
+STEP 2 — REPORT (after your Step 1 reasoning, output the JSON report)
 
 SUBSECTION DEFINITIONS
 
 KEY TAKEAWAYS
-The 1–2 most important themes from this ${phase} phase — positive or negative.
-These are what the coach must communicate to the team. Prefer multi-clip evidence.
+The 1–2 most important themes — positive or negative — from this ${phase} phase.
+These are the themes the coach MUST communicate. Prefer themes with high-significance multi-clip evidence.
+Summary should be tactical and strategic — explain the structural cause, not just the event.
 
 POSITIVES
-Themes showing consistent, well-executed ${phase} patterns.
-0–3 themes. Only genuine recurring strengths — do not manufacture positives.
-Each theme must include an "enhance" field: 1–2 sentences on how to turn this strength into an even greater advantage. If there is genuinely nothing more to add, write "This is already a significant strength — maintain focus and consistency."
+Themes showing consistent, well-executed ${phase} patterns. 0–3 themes.
+Only genuine recurring strengths — do not manufacture positives.
+"enhance" field: 1–2 sentences on how to build this into an even greater tactical weapon.
 
 WORK ONS
-Themes showing clear, repeated issues or execution failures. Most critical first.
-0–3 themes.
-Each theme must include an "amend" field: 1–2 sentences of specific, actionable coaching instruction on how to fix this issue.
+Themes showing clear, repeated structural or execution failures. Most critical first. 0–3 themes.
+"amend" field: 1–2 sentences of specific, actionable coaching instruction — what the team needs to do differently.
 
 CLIP RULES
-- Select 2–3 clips per theme that most clearly demonstrate THAT specific theme
+- Select 2–3 clips per theme that best evidence THAT specific structural pattern
 - relevance_score (1–10): how directly this clip illustrates this specific theme
-- A clip may appear under multiple themes only where it directly supports the point
-- description: 1 sentence — what this clip shows that supports the theme
+- Prefer clips with higher significance scores
+- description: 1 sentence — what this clip shows structurally that supports the theme
 - Preserve clip_id and timestamp values exactly as given in the input
 
 QUALITY RULES
 - Do NOT invent themes not evidenced in the clips
-- "good" quality clips carry more evidential weight than "mixed" or "poor"
+- Clips marked quality "good" with high significance carry most evidential weight
 - If fewer than 2 clips support a theme, merge or drop it
-- Prefer strong evidence in fewer themes over weak coverage across many
+- Prefer strong evidence in fewer themes over thin coverage across many
 
-Return ONLY valid JSON. No markdown, no explanation:
+After your Step 1 analysis, return the JSON report. No markdown fences around the JSON:
 {
   "report_type": "match",
   "phases": [
@@ -172,12 +242,12 @@ Return ONLY valid JSON. No markdown, no explanation:
           "themes": [
             {
               "title": "3–5 word theme title",
-              "summary": "1–2 sentence coaching observation grounded in clip evidence",
+              "summary": "2–3 sentence tactical coaching observation — explain the structural cause, not the event",
               "clips": [
                 {
-                  "clip_id": "clip_id value from input",
-                  "timestamp": "timestamp value from input",
-                  "description": "1 sentence: what this clip shows that supports the theme",
+                  "clip_id": "exact clip_id from input",
+                  "timestamp": "exact timestamp from input",
+                  "description": "1 sentence: what this clip shows structurally that supports the theme",
                   "relevance_score": 9
                 }
               ]
@@ -189,8 +259,8 @@ Return ONLY valid JSON. No markdown, no explanation:
           "themes": [
             {
               "title": "3–5 word theme title",
-              "summary": "1–2 sentence coaching observation",
-              "enhance": "1–2 sentences on how to elevate this strength further",
+              "summary": "2–3 sentence tactical coaching observation",
+              "enhance": "1–2 sentences on how to build this into a greater tactical weapon",
               "clips": []
             }
           ]
@@ -200,8 +270,8 @@ Return ONLY valid JSON. No markdown, no explanation:
           "themes": [
             {
               "title": "3–5 word theme title",
-              "summary": "1–2 sentence coaching observation",
-              "amend": "1–2 sentences of specific actionable coaching instruction to fix this",
+              "summary": "2–3 sentence tactical coaching observation — explain the structural cause",
+              "amend": "1–2 sentences of specific actionable coaching instruction",
               "clips": []
             }
           ]
@@ -211,7 +281,7 @@ Return ONLY valid JSON. No markdown, no explanation:
   ]
 }`;
 
-  // Call Claude
+  // Call Claude with system prompt for stronger role priming
   const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -221,7 +291,8 @@ Return ONLY valid JSON. No markdown, no explanation:
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 4096,
+      max_tokens: 8000,
+      system: systemPrompt,
       messages: [{ role: "user", content: synthesisPrompt }],
     }),
   });
@@ -239,7 +310,11 @@ Return ONLY valid JSON. No markdown, no explanation:
 
   let reportData: Record<string, unknown>;
   try {
-    const clean = text.replace(/```json|```/g, "").trim();
+    // Response contains CoT reasoning (Step 1) followed by JSON (Step 2)
+    // Extract the JSON object — find the last { ... } block
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON found in response");
+    const clean = jsonMatch[0].replace(/```json|```/g, "").trim();
     reportData = JSON.parse(clean);
   } catch {
     return NextResponse.json({ error: "Failed to parse AI response", raw: text }, { status: 500 });
