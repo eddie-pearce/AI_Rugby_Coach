@@ -987,6 +987,8 @@ class CreateMatchRequest(BaseModel):
 class UpdateClipRequest(BaseModel):
     match_id: Optional[str] = None         # None = unlink from match
     label: Optional[str] = None            # None = clear label
+    phase: Optional[str] = None
+    field_zone: Optional[str] = None
     analysis_output: Optional[str] = None  # Coach-edited analysis text
     excluded: Optional[bool] = None        # Exclude from report generation
 
@@ -1294,6 +1296,10 @@ def update_clip(clip_id: str, req: UpdateClipRequest, request: Request):
         update_data["match_id"] = req.match_id or None
     if req.label is not None or "label" in req.model_fields_set:
         update_data["label"] = req.label.strip() if req.label and req.label.strip() else None
+    if req.phase is not None or "phase" in req.model_fields_set:
+        update_data["phase"] = req.phase or None
+    if req.field_zone is not None or "field_zone" in req.model_fields_set:
+        update_data["field_zone"] = req.field_zone or None
     if req.analysis_output is not None:
         update_data["analysis_output"] = req.analysis_output
     if req.excluded is not None:

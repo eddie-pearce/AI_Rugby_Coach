@@ -36,6 +36,8 @@ interface Clip {
   end_time: number;
   tag: Tag;
   label: string | null;
+  phase: string | null;
+  field_zone: string | null;
   created_at: string;
   status: 'pending' | 'analysing' | 'complete' | 'failed' | null;
   error_message: string | null;
@@ -325,6 +327,8 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editMatchId, setEditMatchId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
+  const [editPhase, setEditPhase] = useState("");
+  const [editFieldZone, setEditFieldZone] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -548,6 +552,8 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
     setEditingId(clip.id);
     setEditMatchId(clip.match_id);
     setEditLabel(clip.label ?? "");
+    setEditPhase(clip.phase ?? "");
+    setEditFieldZone(clip.field_zone ?? "");
     setSaveError("");
   }
 
@@ -583,6 +589,8 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
         body: JSON.stringify({
           match_id: editMatchId || null,
           label: editLabel.trim() || null,
+          phase: editPhase || null,
+          field_zone: editFieldZone || null,
         }),
       });
       if (!res.ok) {
@@ -1017,6 +1025,39 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
                           }}
                         />
 
+                        {/* Phase */}
+                        <div>
+                          <p className="text-white/40 text-xs mb-1">Phase</p>
+                          <select
+                            value={editPhase}
+                            onChange={(e) => setEditPhase(e.target.value)}
+                            className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/50 appearance-none [&>option]:bg-[#111] [&>option]:text-white"
+                          >
+                            <option value="">Not set</option>
+                            <option value="Set Piece — Scrum">Set Piece — Scrum</option>
+                            <option value="Set Piece — Lineout">Set Piece — Lineout</option>
+                            <option value="Phase Play / Breakdown">Phase Play / Breakdown</option>
+                            <option value="Transition">Transition</option>
+                            <option value="Kick Receipt / Counter Attack">Kick Receipt / Counter Attack</option>
+                          </select>
+                        </div>
+
+                        {/* Field Zone */}
+                        <div>
+                          <p className="text-white/40 text-xs mb-1">Field Zone</p>
+                          <select
+                            value={editFieldZone}
+                            onChange={(e) => setEditFieldZone(e.target.value)}
+                            className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/50 appearance-none [&>option]:bg-[#111] [&>option]:text-white"
+                          >
+                            <option value="">Not set</option>
+                            <option value="Own 22">Own 22</option>
+                            <option value="Own Half (22m–halfway)">Own Half (22m–halfway)</option>
+                            <option value="Opposition Half (halfway–22m)">Opposition Half (halfway–22m)</option>
+                            <option value="Opposition 22">Opposition 22</option>
+                          </select>
+                        </div>
+
                         {/* Label / context */}
                         <div>
                           <p className="text-white/40 text-xs mb-1">
@@ -1104,6 +1145,12 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
                           <p className="text-white/40 text-xs mb-1">{resolveMatchName(clip.match_id)}</p>
                         ) : (
                           <p className="text-white/20 text-xs mb-1 italic">No match assigned</p>
+                        )}
+
+                        {(clip.phase || clip.field_zone) && (
+                          <p className="text-white/35 text-xs mb-1">
+                            {[clip.phase, clip.field_zone].filter(Boolean).join(" · ")}
+                          </p>
                         )}
 
                         <p className="text-white/25 text-xs font-mono">
