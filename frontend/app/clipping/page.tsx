@@ -335,6 +335,10 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
   // ── Delete state ──
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // ── Bulk re-analyse state ──
+  const [bulkAnalysing, setBulkAnalysing] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+
   const fetchMatches = useCallback(async () => {
     try {
       const endpoint = clipMode === "opposition" ? `${API}/opponents` : `${API}/matches`;
@@ -605,6 +609,31 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleBulkReanalyse() {
+    if (!window.confirm(`Re-analyse all ${clips.length} clip${clips.length !== 1 ? "s" : ""} through the updated pipeline?\n\nThis will reset and re-run every clip. It may take several minutes.`)) return;
+    setBulkAnalysing(true);
+    setBulkProgress({ done: 0, total: clips.length });
+    let done = 0;
+    for (const clip of clips) {
+      try {
+        // Reset status to pending in local state immediately
+        setClips((prev) => prev.map((c) => c.id === clip.id ? { ...c, status: "pending" } : c));
+        await apiFetch(`${API}/analyse/clip/bg`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clip_id: clip.id, clip_path: clip.clip_path }),
+        });
+        pollUntilDone(clip.id);
+      } catch { /* best-effort — continue to next clip */ }
+      done++;
+      setBulkProgress({ done, total: clips.length });
+      // Small gap between requests to avoid overwhelming the server
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    setBulkAnalysing(false);
+    setBulkProgress(null);
   }
 
   return (
@@ -935,7 +964,21 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-              <h2 className="text-white font-semibold text-base mb-4">Saved Clips</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-white font-semibold text-base">Saved Clips</h2>
+                {clips.length > 0 && (
+                  <button
+                    onClick={handleBulkReanalyse}
+                    disabled={bulkAnalysing}
+                    title="Re-analyse all clips through the updated pipeline"
+                    className="text-xs text-white/40 hover:text-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {bulkAnalysing && bulkProgress
+                      ? `Re-analysing… ${bulkProgress.done}/${bulkProgress.total}`
+                      : "Re-analyse all"}
+                  </button>
+                )}
+              </div>
 
               {/* Filters */}
               <div className="flex flex-col gap-2 mb-4">
