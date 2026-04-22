@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/apiFetch";
+import { formatAnalysisOutput } from "@/lib/formatAnalysis";
 
 type Tag = "attack" | "defence";
 
@@ -158,7 +159,7 @@ export default function ClipReviewPage({ tag }: { tag: Tag }) {
                     ref={analysisRef}
                     className="text-white/80 text-sm leading-7 whitespace-pre-wrap font-sans"
                   >
-                    {selected.analysis_output}
+                    {formatAnalysisOutput(selected.analysis_output)}
                   </pre>
                 </>
               ) : (

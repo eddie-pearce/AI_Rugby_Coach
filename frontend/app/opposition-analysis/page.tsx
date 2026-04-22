@@ -2,19 +2,20 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/apiFetch";
-import ReportView, { type StructuredReport } from "@/components/ReportView";
+import OppositionReportView from "@/components/OppositionReportView";
+import type { StructuredReport } from "@/components/ReportView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Match {
+interface Opponent {
   id: string;
   name: string;
   date: string;
 }
 
-interface Report {
+interface OppReport {
   id: string;
-  report_type: "attack" | "defence";
+  report_type: "opp_attack" | "opp_defence";
   report_data: StructuredReport | null;
   created_at: string;
 }
@@ -28,11 +29,11 @@ function formatDate(dateStr: string) {
   });
 }
 
-// ─── Match detail ─────────────────────────────────────────────────────────────
+// ─── Opponent detail ──────────────────────────────────────────────────────────
 
-function MatchDetail({ match }: { match: Match }) {
-  const [tag, setTag] = useState<"attack" | "defence">("attack");
-  const [reports, setReports] = useState<Report[]>([]);
+function OpponentDetail({ opponent }: { opponent: Opponent }) {
+  const [tag, setTag] = useState<"opp_attack" | "opp_defence">("opp_attack");
+  const [reports, setReports] = useState<OppReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
@@ -41,29 +42,38 @@ function MatchDetail({ match }: { match: Match }) {
     async function load() {
       setLoading(true);
       try {
-        const reportsRes = await fetch(`/api/generate-report?match_id=${encodeURIComponent(match.id)}`);
+        const reportsRes = await fetch(`/api/generate-opposition-report?match_id=${encodeURIComponent(opponent.id)}`);
         if (reportsRes.ok) setReports(await reportsRes.json());
       } catch { /* non-fatal */ }
       finally { setLoading(false); }
     }
     load();
-  }, [match.id]);
+  }, [opponent.id]);
 
   async function handleGenerateReport() {
     setGenerating(true);
     setGenError("");
+    const label = tag === "opp_attack" ? "Attack" : "Defence";
     try {
-      const res = await fetch("/api/generate-report", {
+      const res = await fetch("/api/generate-opposition-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ match_id: match.id, label: tag.charAt(0).toUpperCase() + tag.slice(1) }),
+        body: JSON.stringify({ match_id: opponent.id, label }),
       });
-      const data = await res.json();
-      if (data.noClips) { setGenError(`No analysed ${tag} clips found for this match.`); return; }
-      if (!res.ok) throw new Error(data.error ?? "Failed to generate report");
+      let data: Record<string, unknown>;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("The report took too long to generate. Please try again.");
+      }
+      if (data.noClips) { setGenError(`No analysed opposition ${label.toLowerCase()} clips found.`); return; }
+      if (!res.ok) {
+        if (data.raw) console.error("AI raw response:", data.raw);
+        throw new Error((data.error as string) ?? "Failed to generate report");
+      }
       setReports((prev) => {
         const filtered = prev.filter((r) => r.report_type !== tag);
-        return [...filtered, data as Report];
+        return [...filtered, data as OppReport];
       });
 
     } catch (err) {
@@ -77,17 +87,17 @@ function MatchDetail({ match }: { match: Match }) {
 
   return (
     <div>
-      {/* Attack / Defence toggle */}
+      {/* Their Attack / Their Defence toggle */}
       <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1 mb-6 w-fit">
-        {(["attack", "defence"] as const).map((t) => (
+        {(["opp_attack", "opp_defence"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTag(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-all ${
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
               tag === t ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"
             }`}
           >
-            {t}
+            {t === "opp_attack" ? "Their Attack" : "Their Defence"}
           </button>
         ))}
       </div>
@@ -105,7 +115,7 @@ function MatchDetail({ match }: { match: Match }) {
                 Generated {new Date(tagReport.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
               </p>
             ) : (
-              <p className="text-white/30 text-sm">No {tag} report yet.</p>
+              <p className="text-white/30 text-sm">No scouting report yet.</p>
             )}
             <button
               onClick={handleGenerateReport}
@@ -123,27 +133,27 @@ function MatchDetail({ match }: { match: Match }) {
             </button>
           </div>
           {genError && <p className="text-red-400 text-sm mb-4">{genError}</p>}
-          {tagReport?.report_data && <ReportView report={tagReport.report_data} />}
+          {tagReport?.report_data && <OppositionReportView report={tagReport.report_data} />}
         </div>
       )}
     </div>
   );
 }
 
-// ─── Match selector dropdown ──────────────────────────────────────────────────
+// ─── Opposition selector dropdown ─────────────────────────────────────────────
 
-function MatchDropdown({
-  matches,
+function OppositionDropdown({
+  opponents,
   selectedId,
   onSelect,
 }: {
-  matches: Match[];
+  opponents: Opponent[];
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const selected = matches.find((m) => m.id === selectedId);
+  const selected = opponents.find((o) => o.id === selectedId);
 
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
@@ -161,7 +171,7 @@ function MatchDropdown({
         className="w-full bg-white/10 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-left flex items-center justify-between hover:border-white/25 focus:outline-none focus:border-white/50 transition-colors"
       >
         <span className={selected ? "text-white truncate" : "text-white/30"}>
-          {selected ? selected.name : "Select a match…"}
+          {selected ? selected.name : "Select an opposition…"}
         </span>
         <svg
           className={`w-4 h-4 text-white/40 shrink-0 ml-2 transition-transform ${open ? "rotate-180" : ""}`}
@@ -171,19 +181,19 @@ function MatchDropdown({
         </svg>
       </button>
 
-      {open && matches.length > 0 && (
+      {open && opponents.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-[#111] border border-white/15 rounded-xl shadow-2xl z-50 overflow-hidden max-h-64 overflow-y-auto">
-          {matches.map((m) => (
+          {opponents.map((o) => (
             <button
-              key={m.id}
+              key={o.id}
               type="button"
-              onClick={() => { onSelect(m.id); setOpen(false); }}
+              onClick={() => { onSelect(o.id); setOpen(false); }}
               className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between hover:bg-white/10 transition-colors ${
-                selectedId === m.id ? "bg-white/10 text-white" : "text-white/70"
+                selectedId === o.id ? "bg-white/10 text-white" : "text-white/70"
               }`}
             >
-              <span className="truncate">{m.name}</span>
-              <span className="text-white/30 text-xs shrink-0 ml-3">{formatDate(m.date)}</span>
+              <span className="truncate">{o.name}</span>
+              <span className="text-white/30 text-xs shrink-0 ml-3">{formatDate(o.date)}</span>
             </button>
           ))}
         </div>
@@ -194,58 +204,63 @@ function MatchDropdown({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function MatchesPage() {
-  const [matches, setMatches] = useState<Match[]>([]);
+export default function OppositionAnalysisPage() {
+  const [opponents, setOpponents] = useState<Opponent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const fetchMatches = useCallback(async () => {
+  const fetchOpponents = useCallback(async () => {
     try {
-      const res = await apiFetch(`${API}/matches`);
+      const res = await apiFetch(`${API}/opponents`);
       if (res.ok) {
-        const data: Match[] = await res.json();
-        setMatches(data);
+        const data: Opponent[] = await res.json();
+        setOpponents(data);
         if (data.length > 0) setSelectedId(data[0].id);
       }
     } catch { /* non-fatal */ }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchMatches(); }, [fetchMatches]);
+  useEffect(() => { fetchOpponents(); }, [fetchOpponents]);
 
-  const selected = matches.find((m) => m.id === selectedId) ?? null;
+  const selected = opponents.find((o) => o.id === selectedId) ?? null;
 
   return (
     <main className="min-h-screen px-4 py-10">
       <div className="max-w-6xl mx-auto">
 
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white">Match Analysis</h1>
-          <p className="text-white/40 text-sm mt-1">View reports for each match.</p>
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-3xl font-bold text-white">Opposition Analysis</h1>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">
+              Opposition
+            </span>
+          </div>
+          <p className="text-white/40 text-sm mt-1">Select an opposition to generate a scouting report.</p>
         </div>
 
         {loading ? (
           <div className="flex items-center gap-2 text-white/30 text-sm">
             <div className="w-4 h-4 border-2 border-white/20 border-t-white/50 rounded-full animate-spin" />
-            Loading matches…
+            Loading…
           </div>
-        ) : matches.length === 0 ? (
+        ) : opponents.length === 0 ? (
           <div className="bg-white/5 border border-white/10 rounded-xl px-5 py-8">
             <p className="text-white/40 text-sm">
-              No matches yet.{" "}
-              <a href="/match-analysis/clipping" className="text-white/60 underline underline-offset-2 hover:text-white transition-colors">
-                Create one in the Clipping tool.
+              No opposition teams added yet.{" "}
+              <a href="/opposition-analysis/clipping" className="text-white/60 underline underline-offset-2 hover:text-white transition-colors">
+                Add one in the Clipping section.
               </a>
             </p>
           </div>
         ) : (
           <div className="space-y-6">
 
-            {/* Match selector */}
+            {/* Opposition selector */}
             <div className="max-w-sm">
-              <p className="text-white/40 text-xs mb-2">Match</p>
-              <MatchDropdown
-                matches={matches}
+              <p className="text-white/40 text-xs mb-2">Opposition</p>
+              <OppositionDropdown
+                opponents={opponents}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
               />
@@ -258,7 +273,7 @@ export default function MatchesPage() {
                   <h2 className="text-xl font-bold text-white">{selected.name}</h2>
                   <p className="text-white/40 text-sm mt-0.5">{formatDate(selected.date)}</p>
                 </div>
-                <MatchDetail key={selected.id} match={selected} />
+                <OpponentDetail key={selected.id} opponent={selected} />
               </div>
             )}
 

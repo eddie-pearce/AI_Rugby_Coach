@@ -4,7 +4,21 @@ import { useRef, useState, ChangeEvent, useEffect, useCallback } from "react";
 import { useClipQueue } from "@/context/ClipQueueContext";
 import { apiFetch } from "@/lib/apiFetch";
 
-type Tag = "attack" | "defence";
+type Tag = "attack" | "defence" | "opp_attack" | "opp_defence";
+type ClipMode = "self" | "opposition";
+type BaseTag = "attack" | "defence";
+
+const MAX_RETRIES = 3;
+
+function formatTagLabel(tag: Tag): string {
+  return tag.replace("opp_", "").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function tagBadgeStyle(tag: Tag): string {
+  return tag === "attack" || tag === "opp_attack"
+    ? "bg-green-500/20 text-green-400"
+    : "bg-blue-500/20 text-blue-400";
+}
 
 interface Match {
   id: string;
@@ -54,7 +68,7 @@ function StatusBadge({ status }: { status: Clip['status'] }) {
   if (!status || status === 'complete') return null;
   const styles: Record<string, string> = {
     pending:   'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
-    analysing: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+    analysing: 'bg-red-500/15 text-red-400 border-red-500/25',
     failed:    'bg-red-500/15 text-red-400 border-red-500/25',
   };
   return (
@@ -77,9 +91,13 @@ interface MatchDropdownProps {
   onSelect: (id: string) => void;
   onCreated: (match: Match) => void;
   onDeleted: (id: string) => void;
+  mode?: "match" | "opposition";
 }
 
-function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: MatchDropdownProps) {
+function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted, mode = "match" }: MatchDropdownProps) {
+  const isOpp = mode === "opposition";
+  const noun = isOpp ? "opposition" : "match";
+  const Noun = isOpp ? "Opposition" : "Match";
   const [open, setOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState("");
@@ -115,8 +133,8 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: 
 
   async function handleCreate() {
     const trimmed = newName.trim();
-    if (!trimmed) { setFormError("Match name is required."); return; }
-    if (!newDate) { setFormError("Match date is required."); return; }
+    if (!trimmed) { setFormError(`${Noun} name is required.`); return; }
+    if (!newDate) { setFormError(`${Noun} date is required.`); return; }
 
     setCreating(true);
     setFormError("");
@@ -124,11 +142,11 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: 
       const res = await apiFetch(`${API}/matches`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed, date: newDate }),
+        body: JSON.stringify({ name: trimmed, date: newDate, match_type: isOpp ? "opponent" : "match" }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail || "Failed to create match");
+        throw new Error((err as { detail?: string }).detail || `Failed to create ${noun}`);
       }
       const created: Match = await res.json();
       onCreated(created);
@@ -138,7 +156,7 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: 
       setShowForm(false);
       setOpen(false);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to create match");
+      setFormError(err instanceof Error ? err.message : `Failed to create ${noun}`);
     } finally {
       setCreating(false);
     }
@@ -146,7 +164,7 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: 
 
   return (
     <div className="relative" ref={containerRef}>
-      <p className="text-white/40 text-xs mb-2">Match</p>
+      <p className="text-white/40 text-xs mb-2">{Noun}</p>
 
       {/* Trigger */}
       <button
@@ -155,7 +173,7 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: 
         className="w-full bg-white/10 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-left flex items-center justify-between hover:border-white/25 focus:outline-none focus:border-white/50 transition-colors"
       >
         <span className={selected ? "text-white truncate" : "text-white/30"}>
-          {selected ? `${selected.name} — ${formatMatchDate(selected.date)}` : "Select a match…"}
+          {selected ? `${selected.name} — ${formatMatchDate(selected.date)}` : `Select ${isOpp ? "an" : "a"} ${noun}…`}
         </span>
         <svg
           className={`w-4 h-4 text-white/40 shrink-0 ml-2 transition-transform ${open ? "rotate-180" : ""}`}
@@ -212,7 +230,7 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: 
             </div>
           )}
 
-          {/* Add new match */}
+          {/* Add new entry */}
           {!showForm ? (
             <button
               type="button"
@@ -222,18 +240,18 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: 
               }`}
             >
               <span className="text-base leading-none">+</span>
-              <span>Add new match</span>
+              <span>Add new {noun}</span>
             </button>
           ) : (
             <div className={`p-4 space-y-3 ${matches.length > 0 ? "border-t border-white/10" : ""}`}>
-              <p className="text-white/40 text-xs font-semibold uppercase tracking-wider">New Match</p>
+              <p className="text-white/40 text-xs font-semibold uppercase tracking-wider">New {Noun}</p>
 
               <input
                 type="text"
                 value={newName}
                 autoFocus
                 onChange={(e) => { setNewName(e.target.value); setFormError(""); }}
-                placeholder="Match name (e.g. vs Harlequins)"
+                placeholder={isOpp ? "Opposition name (e.g. Harlequins)" : "Match name (e.g. vs Harlequins)"}
                 className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/25 focus:outline-none focus:border-white/50"
               />
 
@@ -275,17 +293,20 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted }: 
 // ClippingPage
 // ---------------------------------------------------------------------------
 
-export default function ClippingPage() {
+export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const reverseIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryCountsRef = useRef<Map<string, number>>(new Map());
 
   // ── Clip queue (global context — survives navigation) ──
   const { queue, videoFile, videoUrl, setVideoFile, changeVideoFile, addToQueue: ctxAddToQueue, cancelItem, onClipSaved } = useClipQueue();
 
+  const [clipMode, setClipMode] = useState<ClipMode>(fixedMode ?? "self");
+
   const [markIn, setMarkIn] = useState<number | null>(null);
   const [markOut, setMarkOut] = useState<number | null>(null);
-  const [tag, setTag] = useState<Tag | null>(null);
+  const [tag, setTag] = useState<"attack" | "defence" | null>(null);
   const [label, setLabel] = useState("");
   const [matchId, setMatchId] = useState<string | null>(null);
 
@@ -293,6 +314,10 @@ export default function ClippingPage() {
   const [clips, setClips] = useState<Clip[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loadingClips, setLoadingClips] = useState(true);
+
+  // ── Saved clips filters ──
+  const [clipMatchFilter, setClipMatchFilter] = useState<string>("all");
+  const [clipTagFilter, setClipTagFilter] = useState<"all" | BaseTag>("all");
 
   // ── Inline edit state ──
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -306,11 +331,12 @@ export default function ClippingPage() {
 
   const fetchMatches = useCallback(async () => {
     try {
-      const res = await apiFetch(`${API}/matches`);
-      const data: Match[] = await res.json();
-      setMatches(data);
+      const endpoint = clipMode === "opposition" ? `${API}/opponents` : `${API}/matches`;
+      const res = await apiFetch(endpoint);
+      const data = await res.json();
+      setMatches(Array.isArray(data) ? data : []);
     } catch { /* silently fail */ }
-  }, []);
+  }, [clipMode]);
 
   // Track per-clip poll intervals so we never double-poll and can clean up on unmount
   const pollIntervals = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
@@ -373,7 +399,19 @@ export default function ClippingPage() {
     }
   }, [pollUntilDone]);
 
+  const handleRetry = useCallback(async (clip: Clip) => {
+    const currentCount = retryCountsRef.current.get(clip.id) ?? 0;
+    if (currentCount >= MAX_RETRIES) return;
+    retryCountsRef.current.set(clip.id, currentCount + 1);
+    // Optimistically update status so UI reflects the retry
+    setClips((prev) => prev.map((c) => c.id === clip.id ? { ...c, status: 'pending' } : c));
+    await triggerAnalysis(clip.id, clip.clip_path);
+  }, [triggerAnalysis]);
+
   useEffect(() => { fetchMatches(); fetchClips(); }, [fetchMatches, fetchClips]);
+
+  // Reset match/opponent selection when mode changes
+  useEffect(() => { setMatchId(null); setMatches([]); }, [clipMode]);
 
   // Keyboard shortcuts — only active when a video is loaded and focus isn't in a text input
   useEffect(() => {
@@ -449,6 +487,14 @@ export default function ClippingPage() {
     };
   }, [videoUrl]);
 
+  // When the component mounts with an existing videoUrl (returning from navigation),
+  // the <video> element renders with src already set but never calls load() — force it.
+  useEffect(() => {
+    if (videoUrl && videoRef.current) {
+      videoRef.current.load();
+    }
+  }, [videoUrl]);
+
   // Register fetchClips callback so context can notify us after each upload
   useEffect(() => {
     onClipSaved.current = () => { fetchClips(); };
@@ -482,7 +528,8 @@ export default function ClippingPage() {
   function addToQueue() {
     if (!videoUrl || markIn === null || markOut === null || !tag) return;
     if (markOut <= markIn) return;
-    ctxAddToQueue({ markIn, markOut, tag, label, matchId });
+    const effectiveTag: Tag = clipMode === "opposition" ? `opp_${tag}` : tag;
+    ctxAddToQueue({ markIn, markOut, tag: effectiveTag, label, matchId });
     setMarkIn(null);
     setMarkOut(null);
     setLabel("");
@@ -554,7 +601,14 @@ export default function ClippingPage() {
     <main className="min-h-screen px-4 py-10">
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white">Clipping Tool</h1>
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-3xl font-bold text-white">Clipping Tool</h1>
+            {fixedMode === "opposition" && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                Opposition
+              </span>
+            )}
+          </div>
           <div className="mt-3 flex flex-col gap-1.5">
             {[
               { n: "1", text: "Upload the full match mp4/mov file using the panel on the left." },
@@ -572,6 +626,36 @@ export default function ClippingPage() {
           </div>
         </div>
 
+        {/* ── Mode toggle — only shown when no fixed mode is set ── */}
+        {!fixedMode && (
+          <>
+            <div className="mb-5 flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-1 max-w-xs">
+              {(["self", "opposition"] as ClipMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setClipMode(mode)}
+                  className={`flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-all ${
+                    clipMode === mode
+                      ? mode === "opposition"
+                        ? "bg-orange-500/20 text-orange-300 border border-orange-500/30"
+                        : "bg-white/15 text-white"
+                      : "text-white/40 hover:text-white/70"
+                  }`}
+                >
+                  {mode === "self" ? "My Team" : "Opposition"}
+                </button>
+              ))}
+            </div>
+
+            {clipMode === "opposition" && (
+              <div className="mb-5 rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3 max-w-sm">
+                <p className="text-orange-300 text-xs font-semibold">Opposition mode</p>
+                <p className="text-orange-300/70 text-xs mt-0.5">Clips will be analysed from the opposition's perspective for scouting reports.</p>
+              </div>
+            )}
+          </>
+        )}
+
         {/* ── Match selector — always visible ── */}
         <div className="mb-6 max-w-sm">
           <MatchDropdown
@@ -583,6 +667,7 @@ export default function ClippingPage() {
               setMatches((prev) => prev.filter((m) => m.id !== id));
               if (matchId === id) setMatchId(null);
             }}
+            mode={clipMode === "opposition" ? "opposition" : "match"}
           />
         </div>
 
@@ -683,7 +768,7 @@ export default function ClippingPage() {
                 <div>
                   <p className="text-white/40 text-xs mb-2">Tag</p>
                   <div className="flex gap-3">
-                    {(["attack", "defence"] as Tag[]).map((t) => (
+                    {(["attack", "defence"] as ("attack" | "defence")[]).map((t) => (
                       <button
                         key={t}
                         onClick={() => setTag(t)}
@@ -809,27 +894,73 @@ export default function ClippingPage() {
             <div className="bg-white/5 border border-white/10 rounded-xl p-5">
               <h2 className="text-white font-semibold text-base mb-4">Saved Clips</h2>
 
-              {loadingClips ? (
+              {/* Filters */}
+              <div className="flex flex-col gap-2 mb-4">
+                {/* Match / Opposition filter */}
+                <select
+                  value={clipMatchFilter}
+                  onChange={(e) => setClipMatchFilter(e.target.value)}
+                  className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-white/30 appearance-none"
+                >
+                  <option value="all">{clipMode === "opposition" ? "All Oppositions" : "All Matches"}</option>
+                  <option value="none">{clipMode === "opposition" ? "No Opposition Assigned" : "No Match Assigned"}</option>
+                  {matches.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                {/* Tag filter */}
+                <div className="flex gap-1.5">
+                  {(["all", "attack", "defence"] as ("all" | BaseTag)[]).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setClipTagFilter(t)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                        clipTagFilter === t
+                          ? "bg-amber text-navy"
+                          : "bg-white/10 text-white/40 hover:text-white hover:bg-white/20"
+                      }`}
+                    >
+                      {t === "all" ? "All" : t.charAt(0).toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                // Mode-aware clip filtering
+                const effectiveTagFilter = (t: "all" | BaseTag): "all" | Tag =>
+                  t === "all" ? "all" : clipMode === "opposition" ? `opp_${t}` : t;
+                const modeTagFilter = effectiveTagFilter(clipTagFilter);
+
+                const visibleClips = clips.filter((c) => {
+                  // Filter by current mode: only show clips that belong to this mode
+                  const isOppositionClip = c.tag === "opp_attack" || c.tag === "opp_defence";
+                  if (clipMode === "opposition" && !isOppositionClip) return false;
+                  if (clipMode === "self" && isOppositionClip) return false;
+                  // Match filter
+                  if (clipMatchFilter !== "all" && (clipMatchFilter === "none" ? !!c.match_id : c.match_id !== clipMatchFilter)) return false;
+                  // Tag filter
+                  if (modeTagFilter !== "all" && c.tag !== modeTagFilter) return false;
+                  return true;
+                });
+
+                return loadingClips ? (
                 <div className="flex justify-center py-8">
                   <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 </div>
-              ) : clips.length === 0 ? (
-                <p className="text-white/30 text-sm text-center py-8">No clips saved yet.</p>
+              ) : visibleClips.length === 0 ? (
+                <p className="text-white/30 text-sm text-center py-8">No clips match the selected filters.</p>
               ) : (
                 <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-                  {clips.map((clip) =>
+                  {visibleClips.map((clip) =>
                     editingId === clip.id ? (
                       /* ── Edit form ── */
                       <div key={clip.id} className="bg-white/8 border border-white/25 rounded-lg p-4 space-y-3">
 
                         {/* Mini header */}
                         <div className="flex items-center justify-between">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${
-                            clip.tag === "attack"
-                              ? "bg-green-500/20 text-green-400"
-                              : "bg-blue-500/20 text-blue-400"
-                          }`}>
-                            {clip.tag}
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tagBadgeStyle(clip.tag)}`}>
+                            {formatTagLabel(clip.tag)}
                           </span>
                           <span className="text-white/30 text-xs font-mono">
                             {formatTime(clip.start_time)} → {formatTime(clip.end_time)}
@@ -889,12 +1020,8 @@ export default function ClippingPage() {
                       <div key={clip.id} className="bg-white/5 border border-white/10 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${
-                              clip.tag === "attack"
-                                ? "bg-green-500/20 text-green-400"
-                                : "bg-blue-500/20 text-blue-400"
-                            }`}>
-                              {clip.tag}
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tagBadgeStyle(clip.tag)}`}>
+                              {formatTagLabel(clip.tag)}
                             </span>
                             <StatusBadge status={clip.status} />
                           </div>
@@ -948,14 +1075,27 @@ export default function ClippingPage() {
                           {formatTime(clip.start_time)} → {formatTime(clip.end_time)}
                         </p>
 
-                        {clip.status === 'failed' && (
-                          <button
-                            onClick={() => triggerAnalysis(clip.id, clip.clip_path)}
-                            className="mt-2 text-xs text-red-400 hover:text-red-300 underline transition-colors"
-                          >
-                            Retry analysis
-                          </button>
-                        )}
+                        {clip.status === 'failed' && (() => {
+                          const retries = retryCountsRef.current.get(clip.id) ?? 0;
+                          return retries >= MAX_RETRIES ? (
+                            <div className="mt-2 space-y-0.5">
+                              <p className="text-red-400 text-xs font-semibold">Failed analysis</p>
+                              {clip.error_message && (
+                                <p className="text-red-400/60 text-xs leading-snug">{clip.error_message}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="mt-2 flex items-center gap-3">
+                              <button
+                                onClick={() => handleRetry(clip)}
+                                className="text-xs text-red-400 hover:text-red-300 underline transition-colors"
+                              >
+                                Retry analysis
+                              </button>
+                              <span className="text-white/20 text-xs">{MAX_RETRIES - retries} attempt{MAX_RETRIES - retries !== 1 ? "s" : ""} remaining</span>
+                            </div>
+                          );
+                        })()}
 
                         {clip.status === 'complete' && (
                           <p className="text-green-400/70 text-xs mt-1.5">Analysis complete</p>
@@ -964,7 +1104,8 @@ export default function ClippingPage() {
                     )
                   )}
                 </div>
-              )}
+              );
+              })()}
             </div>
           </div>
 

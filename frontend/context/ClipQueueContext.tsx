@@ -12,7 +12,7 @@ import { apiFetch } from "@/lib/apiFetch";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type Tag = "attack" | "defence";
+type Tag = "attack" | "defence" | "opp_attack" | "opp_defence";
 
 export interface QueueItem {
   queueId: string;

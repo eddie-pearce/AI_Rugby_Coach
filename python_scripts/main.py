@@ -1,8 +1,11 @@
 import os
+import re
 import time
 import tempfile
 import subprocess
 import json
+import threading
+import uuid
 import requests
 from datetime import datetime, timezone
 
@@ -15,6 +18,8 @@ from pydantic import BaseModel
 from google import genai
 from google.genai import types
 from supabase import create_client
+
+from automated_analysis import jobs as auto_jobs, get_job, update_job, run_automated_pipeline
 
 load_dotenv()
 
@@ -87,8 +92,6 @@ Key Principles: Width and tempo, offload in contact, quick ball from breakdown, 
 DEFENCE_COACH_PROFILE = """
 Team: Test RFC
 Level: Semi-Professional
-Attack Philosophy: Expansive, wide attacking rugby with emphasis on offloading and creating overlaps. Move the ball wide quickly and exploit space in wide channels.
-Key Principles: Width and tempo, offload in contact, quick ball from breakdown, exploit mismatches in wide channels.
 Defence System: Blitz defence.
 Defensive Principles: High line speed, press early, force errors, aggressive in the collision, hunt turnovers at the breakdown.
 """.strip()
@@ -96,96 +99,202 @@ Defensive Principles: High line speed, press early, force errors, aggressive in 
 # --- Analysis instructions ---
 
 ATTACK_INSTRUCTIONS = """
-You are an elite rugby union attack coach with deep tactical knowledge. Use the coach's philosophy as context only — do not penalise good execution simply because it differs from the preferred system. If the team executed well and scored, reflect that honestly. The philosophy is a lens, not a rulebook.
-
+You are an elite rugby union attack coach with deep tactical knowledge.
+The rugby knowledge base above contains relevant reference material — use it to ground your analysis. The coach philosophy is a contextual lens only: do not penalise good execution simply because it differs from the preferred system. If the team executed well and scored, reflect that honestly.
 Analyse the attacking sequence. Report only what you can clearly see. If uncertain, leave it out.
-
 Rules:
-- Never refer to players by number or position — use "the ball carrier", "the support runner", "the first receiver" etc
-- Do not reference timestamps
-- Analyse the sequence, not the end result
-- Use precise rugby terminology throughout — name the structures, plays, and tactical concepts you observe (e.g. pod system, strike play from ruck, wide channel overload, short-side attack, blitz exploit, offload in the tackle, gate attack, crash ball)
-- Every bullet point must be one tight sentence — no padding, no scene-setting, no restating the obvious
-- Only include observations you are fully confident in
 
-Return exactly this structure, nothing else:
+Refer to players by their role in the action only — "the player", "the ball carrier", "the attacker", "the support runner" etc — NEVER use any position name or jersey number. Forbidden terms include: loosehead, tighthead, prop, hooker, lock, flanker, number eight, scrum-half, fly-half, inside centre, outside centre, winger, fullback, and any other positional label.
+Do not reference timestamps
+Analyse the sequence, not the end result
+Name structures and concepts explicitly (e.g. pod system, strike play from ruck, wide channel overload, short-side attack, blitz exploit, offload in the tackle, gate attack, crash ball)
+Every bullet is one tight sentence — no padding, no scene-setting, no restating the obvious
+Confident observations only — if unclear, omit
 
-INTENT
-One sentence maximum. Name the attacking structure or play being executed and what it was designed to achieve.
-
-WHAT WORKED
-Maximum 3 bullet points. Each bullet is one short punchy clause — 15 words maximum. Name the tactical concept and what made it effective. No subordinate clauses, no consequences, no explanation of why it matters. Just the observation.
-Example of the right length and style: "Quick ruck ball allowed the attack to hit the blitz line before it was set."
-If there are only 1 or 2 genuine observations, write only those. If nothing worked, write: "Nothing significant to note."
-
-WHAT DIDN'T WORK
-Maximum 3 bullet points. Each bullet is one short punchy clause — 15 words maximum. Name the tactical breakdown specifically. No subordinate clauses, no consequences, no explanation of why it matters. Just the observation.
-Example of the right length and style: "The pod attack hit a static gain line with no offload option available."
-If there are only 1 or 2 genuine observations, write only those. If nothing broke down, write: "Nothing significant to note."
-
-No filler. No waffle. No generic coaching phrases. If the clip is too brief or unclear to analyse, say so in one sentence.
+Return ONLY a valid JSON object with this exact structure. No preamble, no markdown fences, no extra fields:
+{
+"intent": "one sentence — name the attacking structure or play and what it was designed to achieve",
+"what_worked": ["max 3 items — one short punchy clause each, 15 words max — or empty array if nothing to note"],
+"what_didnt_work": ["max 3 items — one short punchy clause each, 15 words max — or empty array if nothing to note"]
+}
+Example bullet style: "Quick ruck ball allowed the attack to hit the blitz line before it was set."
+If the clip is too brief or unclear to analyse, return: { "intent": "Insufficient footage for analysis", "what_worked": [], "what_didnt_work": [] }
 """.strip()
 
 DEFENCE_INSTRUCTIONS = """
-You are an elite rugby union defence coach with deep tactical knowledge. Use the coach's philosophy as context only — do not penalise good execution simply because it differs from the preferred system. If the team defended well and held the line, reflect that honestly. The philosophy is a lens, not a rulebook.
-
+You are an elite rugby union defence coach with deep tactical knowledge.
+The rugby knowledge base above contains relevant reference material — use it to ground your analysis. The coach philosophy is a contextual lens only: do not penalise good execution simply because it differs from the preferred system. If the team defended well and held the line, reflect that honestly.
 Analyse the defensive sequence. Report only what you can clearly see. If uncertain, leave it out.
-
 Rules:
-- Never refer to players by number or position — use "the defender", "the tackler", "the blitz line" etc
-- Do not reference timestamps
-- Analyse the full sequence, not just the moment of failure or success
-- Use precise rugby terminology throughout — name the defensive systems, patterns, and tactical concepts you observe (e.g. blitz defence, drift defence, man-on-man, rush defence, pillar and post, line speed, inside shoulder, ruck pressure, choke tackle, turnover hunt)
-- Every bullet point must be one tight sentence — no padding, no scene-setting, no restating the obvious
-- Only include observations you are fully confident in
 
-Return exactly this structure, nothing else:
+Refer to players by their role in the action only — "the player", "the defender", "the tackler", "the blitzer" etc — NEVER use any position name or jersey number. Forbidden terms include: loosehead, tighthead, prop, hooker, lock, flanker, number eight, scrum-half, fly-half, inside centre, outside centre, winger, fullback, and any other positional label.
+Do not reference timestamps
+Analyse the full sequence, not just the moment of failure or success
+Name systems and concepts explicitly (e.g. blitz defence, drift defence, man-on-man, rush defence, pillar and post, line speed, inside shoulder, ruck pressure, choke tackle, turnover hunt)
+Every bullet is one tight sentence — no padding, no scene-setting, no restating the obvious
+Confident observations only — if unclear, omit
 
-DEFENSIVE INTENT
-One sentence maximum. Name the defensive system being used and what it was designed to achieve.
-
-WHAT WORKED
-Maximum 3 bullet points. Each bullet is one short punchy clause — 15 words maximum. Name the tactical concept and what made it effective. No subordinate clauses, no consequences, no explanation of why it matters. Just the observation.
-Example of the right length and style: "High line speed from the blitz compressed the breakdown and forced an early turnover."
-If there are only 1 or 2 genuine observations, write only those. If nothing worked, write: "Nothing significant to note."
-
-WHAT DIDN'T WORK
-Maximum 3 bullet points. Each bullet is one short punchy clause — 15 words maximum. Name the tactical breakdown specifically. No subordinate clauses, no consequences, no explanation of why it matters. Just the observation.
-Example of the right length and style: "Drift defence lost inside shoulder as the attack switched back against the grain."
-If there are only 1 or 2 genuine observations, write only those. If nothing broke down, write: "Nothing significant to note."
-
-No filler. No waffle. No generic coaching phrases. If the clip is too brief or unclear to analyse, say so in one sentence.
+Return ONLY a valid JSON object with this exact structure. No preamble, no markdown fences, no extra fields:
+{
+"intent": "one sentence — name the defensive system being used and what it was designed to achieve",
+"what_worked": ["max 3 items — one short punchy clause each, 15 words max — or empty array if nothing to note"],
+"what_didnt_work": ["max 3 items — one short punchy clause each, 15 words max — or empty array if nothing to note"]
+}
+Example bullet style: "High line speed from the blitz compressed the breakdown and forced an early turnover."
+If the clip is too brief or unclear to analyse, return: { "intent": "Insufficient footage for analysis", "what_worked": [], "what_didnt_work": [] }
 """.strip()
 
 # --- Pass 1 prompts (Gemini video → JSON) ---
 
 PASS1_ATTACK_PROMPT = """
-You are an experienced rugby union attack coach.
-
-Analyse this rugby clip. Identify the key tactical concepts, patterns, and themes present in what you observe. Use specific rugby terminology only — no padding, no filler.
-
-Return ONLY a valid JSON object with this structure, no preamble, no markdown:
+You are an elite rugby union attack coach with sharp analytical instincts.
+Analyse this clip of attacking play. Extract only what you can clearly observe — do not infer, speculate, or pad. If the clip is too short or unclear to analyse, return context as "Insufficient footage for analysis" and leave arrays empty.
+Use specific rugby terminology throughout (e.g. pod system, strike play, wide channel overload, gate attack, crash ball, offload in the tackle).
+Return ONLY a valid JSON object with this exact structure. No preamble, no markdown fences, no extra fields:
 {
-  "tactical_themes": ["array of specific rugby tactical concepts observed"],
-  "patterns_observed": ["array of specific patterns or breakdowns seen"],
-  "quality_indicators": "poor, mixed, or good for overall sequence",
-  "context": "2-3 sentence summary of what happened in the clip"
+"tactical_themes": ["array of specific attacking tactical concepts observed — empty array if none clear"],
+"patterns_observed": ["array of specific patterns or execution breakdowns — empty array if none clear"],
+"quality_indicators": "poor" | "mixed" | "good",
+"context": "2 sentences max: what attacking play was attempted and what the outcome was"
 }
 """.strip()
 
 PASS1_DEFENCE_PROMPT = """
-You are an experienced rugby union defence coach.
-
-Analyse this rugby clip. Identify the key tactical concepts, patterns, and themes present in what you observe. Use specific rugby terminology only — no padding, no filler.
-
-Return ONLY a valid JSON object with this structure, no preamble, no markdown:
+You are an elite rugby union defence coach with sharp analytical instincts.
+Analyse this clip of defensive play. Extract only what you can clearly observe — do not infer, speculate, or pad. If the clip is too short or unclear to analyse, return context as "Insufficient footage for analysis" and leave arrays empty.
+Use specific rugby terminology throughout (e.g. blitz defence, drift defence, rush defence, pillar and post, line speed, inside shoulder, choke tackle, turnover hunt).
+Return ONLY a valid JSON object with this exact structure. No preamble, no markdown fences, no extra fields:
 {
-  "tactical_themes": ["array of specific rugby defensive tactical concepts observed"],
-  "patterns_observed": ["array of specific patterns or breakdowns seen"],
-  "quality_indicators": "poor, mixed, or good for overall sequence",
-  "context": "2-3 sentence summary of what happened in the clip"
+"tactical_themes": ["array of specific defensive tactical concepts observed — empty array if none clear"],
+"patterns_observed": ["array of specific patterns or defensive breakdowns — empty array if none clear"],
+"quality_indicators": "poor" | "mixed" | "good",
+"context": "2 sentences max: what defensive system was in operation and whether it held or broke down"
 }
 """.strip()
+
+PASS1_OPP_ATTACK_PROMPT = """
+You are an elite rugby union scout analysing opposition attacking play on behalf of a coaching team.
+Analyse this clip of the opposition's attack. Extract only what you can clearly observe — do not infer, speculate, or pad. Frame everything from the perspective of what our team needs to know to defend against them. If the clip is too short or unclear, return context as "Insufficient footage for analysis" and leave arrays empty.
+Use specific rugby terminology throughout (e.g. pod system, strike play, wide channel overload, crash ball, offload in the tackle, short-side attack).
+Return ONLY a valid JSON object with this exact structure. No preamble, no markdown fences, no extra fields:
+{
+"tactical_themes": ["array of specific attacking tactical concepts the opposition are using — empty array if none clear"],
+"patterns_observed": ["array of specific patterns or tendencies in their attack — frame as threats our team must defend — empty array if none clear"],
+"quality_indicators": "poor" | "mixed" | "good",
+"context": "2 sentences max: what attacking play the opposition ran and how effective it was"
+}
+""".strip()
+
+PASS1_OPP_DEFENCE_PROMPT = """
+You are an elite rugby union scout analysing opposition defensive play on behalf of a coaching team.
+Analyse this clip of the opposition's defence. Extract only what you can clearly observe — do not infer, speculate, or pad. Frame everything from the perspective of what our team can exploit when attacking against them. If the clip is too short or unclear, return context as "Insufficient footage for analysis" and leave arrays empty.
+Use specific rugby terminology throughout (e.g. blitz defence, drift defence, rush defence, pillar and post, line speed, inside shoulder, choke tackle).
+Return ONLY a valid JSON object with this exact structure. No preamble, no markdown fences, no extra fields:
+{
+"tactical_themes": ["array of specific defensive tactical concepts the opposition are using — empty array if none clear"],
+"patterns_observed": ["array of specific patterns or vulnerabilities in their defence — frame as opportunities to exploit — empty array if none clear"],
+"quality_indicators": "poor" | "mixed" | "good",
+"context": "2 sentences max: what defensive system the opposition ran and whether it held or showed gaps"
+}
+""".strip()
+
+OPP_ATTACK_INSTRUCTIONS = """
+You are an elite rugby union scout analysing the opposition's attack on behalf of your coaching team.
+The rugby knowledge base above contains relevant reference material — use it to ground your analysis.
+Analyse the opposition's attacking sequence. Report only what you can clearly see. Focus on what our team needs to know to defend against them effectively. If uncertain, omit it.
+Rules:
+
+Refer to players by their role in the action only — "the player", "the ball carrier", "the attacker", "the support runner" etc — NEVER use any position name or jersey number. Forbidden terms include: loosehead, tighthead, prop, hooker, lock, flanker, number eight, scrum-half, fly-half, inside centre, outside centre, winger, fullback, and any other positional label.
+Do not reference timestamps
+Analyse the sequence, not the end result
+Name structures and concepts explicitly (e.g. pod system, strike play, wide channel overload, crash ball, offload in the tackle)
+Every bullet is one tight sentence — no padding, no scene-setting
+Confident observations only
+
+Return ONLY a valid JSON object with this exact structure. No preamble, no markdown fences, no extra fields:
+{
+"intent": "one sentence — name the attacking structure or play the opposition ran and what it was designed to achieve",
+"what_worked": ["max 3 items — what the opposition executed well, what our team must defend against — 15 words max each — or empty array if nothing to note"],
+"what_didnt_work": ["max 3 items — weaknesses in their attack our team can exploit — 15 words max each — or empty array if nothing to note"]
+}
+Example bullet style: "Accurate wide recycling created a consistent two-on-one in the outside channel."
+If the clip is too brief or unclear to analyse, return: { "intent": "Insufficient footage for analysis", "what_worked": [], "what_didnt_work": [] }
+""".strip()
+
+OPP_DEFENCE_INSTRUCTIONS = """
+You are an elite rugby union scout analysing the opposition's defence on behalf of your coaching team.
+The rugby knowledge base above contains relevant reference material — use it to ground your analysis.
+Analyse the opposition's defensive sequence. Report only what you can clearly see. Focus on what our team can exploit when attacking against them. If uncertain, omit it.
+Rules:
+
+Refer to players by their role in the action only — "the player", "the defender", "the tackler", "the blitzer" etc — NEVER use any position name or jersey number. Forbidden terms include: loosehead, tighthead, prop, hooker, lock, flanker, number eight, scrum-half, fly-half, inside centre, outside centre, winger, fullback, and any other positional label.
+Do not reference timestamps
+Analyse the full sequence, not just the moment of failure or success
+Name systems and concepts explicitly (e.g. blitz defence, drift defence, rush defence, pillar and post, line speed, choke tackle)
+Every bullet is one tight sentence — no padding, no scene-setting
+Confident observations only
+
+Return ONLY a valid JSON object with this exact structure. No preamble, no markdown fences, no extra fields:
+{
+"intent": "one sentence — name the defensive system the opposition are using and what it is designed to achieve",
+"what_worked": ["max 3 items — what they defended well, what our team must account for in attack — 15 words max each — or empty array if nothing to note"],
+"what_didnt_work": ["max 3 items — vulnerabilities in their defence our team can exploit — 15 words max each — or empty array if nothing to note"]
+}
+Example bullet style: "Rush defence consistently shut down first-phase attack before width could be established."
+If the clip is too brief or unclear to analyse, return: { "intent": "Insufficient footage for analysis", "what_worked": [], "what_didnt_work": [] }
+""".strip()
+
+
+# --- Quality gate ---
+
+def should_skip_pass2(pass1_data: dict) -> bool:
+    """Skip Pass 2 if the clip produced no usable analysis."""
+    themes_empty = len(pass1_data.get("tactical_themes", [])) == 0
+    quality_poor = pass1_data.get("quality_indicators", "").lower() == "poor"
+    insufficient = "insufficient" in pass1_data.get("context", "").lower()
+    return themes_empty or (quality_poor and insufficient)
+
+
+# --- Session-level theme aggregation ---
+
+def aggregate_session_themes(pass1_results: list[dict]) -> list[str]:
+    """Collect and deduplicate tactical_themes across all Pass 1 results."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for p1 in pass1_results:
+        for theme in p1.get("tactical_themes", []):
+            key = theme.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                out.append(theme.strip())
+    return out
+
+
+# ── Chunk cleaning ────────────────────────────────────────────────────────────
+
+_CHUNK_HEADER_RE = re.compile(
+    r"ADAPTED FROM|SESSION PLANNING|TECHNICAL REPORT|COMMON MISTAKES|HOW TO FIX|FRAMEWORK\s*[—\-]|SECTION:",
+    re.IGNORECASE,
+)
+
+def clean_chunk(text: str) -> str:
+    """Remove baked-in document/section headers from knowledge base chunk text."""
+    lines = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            lines.append("")
+            continue
+        # Remove entirely uppercase lines (section headers baked into chunk content)
+        if stripped == stripped.upper() and re.search(r"[A-Z]", stripped):
+            continue
+        # Remove lines matching known document/framework header patterns
+        if _CHUNK_HEADER_RE.search(stripped):
+            continue
+        lines.append(line)
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 # --- Two-pass helpers ---
@@ -199,13 +308,15 @@ def embed_query(query: str) -> list[float]:
     return result.embeddings[0].values
 
 
-def semantic_search(query: str, category: str, top_k: int = 5) -> list[dict]:
+def semantic_search(query: str, category: str, top_k: int = 8, min_similarity: float = 0.75) -> list[dict]:
     query_embedding = embed_query(query)
     response = supabase.rpc(
         "match_rugby_knowledge",
         {"query_embedding": query_embedding, "match_count": top_k, "filter_category": category},
     ).execute()
-    return response.data or []
+    results = response.data or []
+    # Only return chunks that meet the similarity threshold — don't pad with weak matches
+    return [r for r in results if r.get("similarity", 1.0) >= min_similarity]
 
 
 def call_claude(prompt: str) -> str:
@@ -226,7 +337,9 @@ def call_claude(prompt: str) -> str:
         timeout=60,
     )
     response.raise_for_status()
-    return response.json()["content"][0]["text"]
+    text = response.json()["content"][0]["text"]
+    # Strip markdown fences if the model wraps JSON in ```json ... ```
+    return text.replace("```json", "").replace("```", "").strip()
 
 
 def assemble_pass2_prompt(
@@ -234,7 +347,13 @@ def assemble_pass2_prompt(
 ) -> str:
     parts = []
     if knowledge_context:
-        parts.append(f"--- RUGBY KNOWLEDGE BASE ---\n{knowledge_context}")
+        parts.append(
+            "--- RUGBY COACHING KNOWLEDGE ---\n"
+            "Use this knowledge to inform your analysis but do not reference, cite, quote, or mention "
+            "any document names, section headers, or source frameworks. "
+            "The knowledge should shape your output invisibly — never surface it.\n\n"
+            + knowledge_context
+        )
     if coach_profile:
         parts.append(f"--- COACH PHILOSOPHY ---\n{coach_profile}")
 
@@ -309,8 +428,18 @@ def run_full_analysis_bg(clip_id: str, clip_path: str, clip_tag: str):
             coach_profile = ""
 
         try:
-            instructions = ATTACK_INSTRUCTIONS if clip_tag == "attack" else DEFENCE_INSTRUCTIONS
-            pass1_prompt = PASS1_ATTACK_PROMPT if clip_tag == "attack" else PASS1_DEFENCE_PROMPT
+            if clip_tag == "attack":
+                instructions = ATTACK_INSTRUCTIONS
+                pass1_prompt = PASS1_ATTACK_PROMPT
+            elif clip_tag == "defence":
+                instructions = DEFENCE_INSTRUCTIONS
+                pass1_prompt = PASS1_DEFENCE_PROMPT
+            elif clip_tag == "opp_attack":
+                instructions = OPP_ATTACK_INSTRUCTIONS
+                pass1_prompt = PASS1_OPP_ATTACK_PROMPT
+            else:  # opp_defence
+                instructions = OPP_DEFENCE_INSTRUCTIONS
+                pass1_prompt = PASS1_OPP_DEFENCE_PROMPT
 
             # --- Pass 1: Gemini ---
             mime_type = "video/webm" if clip_path.endswith(".webm") else "video/mp4"
@@ -352,21 +481,31 @@ def run_full_analysis_bg(clip_id: str, clip_path: str, clip_tag: str):
             except Exception:
                 pass
 
-            # --- Semantic search ---
+            # --- Quality gate ---
+            if pass1_data and should_skip_pass2(pass1_data):
+                print(f"[SKIP] Clip {clip_id} — insufficient footage, Pass 2 skipped")
+                supabase.table("clips").update({
+                    "status": "complete",
+                    "analysis_output": None,
+                    "error_message": None,
+                }).eq("id", clip_id).execute()
+                return
+
+            # --- Aggregated semantic search ---
             knowledge_context = ""
             try:
                 if pass1_data:
-                    themes = pass1_data.get("tactical_themes", [])
-                    patterns = pass1_data.get("patterns_observed", [])
-                    query = " ".join(themes + patterns) or pass1_text[:500]
+                    themes_list = aggregate_session_themes([pass1_data])
+                    query = ", ".join(themes_list) if themes_list else pass1_text[:500]
                 else:
                     query = pass1_text[:500]
 
-                chunks = semantic_search(query, category=clip_tag, top_k=5)
+                # Map opposition tags to their base category for KB search
+                kb_category = clip_tag.replace("opp_", "") if clip_tag.startswith("opp_") else clip_tag
+                chunks = semantic_search(query, category=kb_category)
                 kb_parts = []
                 for chunk in chunks:
-                    header = f"{chunk.get('report_title', '')} — {chunk.get('section_heading', '')}"
-                    kb_parts.append(f"{header}\n{chunk.get('content', '')}")
+                    kb_parts.append(clean_chunk(chunk.get('content', '')))
                 knowledge_context = "\n\n---\n\n".join(kb_parts)
             except Exception:
                 pass
@@ -413,8 +552,18 @@ def two_pass_analysis_generator(tmp_path: str, clip_id: str, clip_tag: str):
     except Exception:
         coach_profile = ""
 
-    instructions = ATTACK_INSTRUCTIONS if clip_tag == "attack" else DEFENCE_INSTRUCTIONS
-    pass1_prompt = PASS1_ATTACK_PROMPT if clip_tag == "attack" else PASS1_DEFENCE_PROMPT
+    if clip_tag == "attack":
+        instructions = ATTACK_INSTRUCTIONS
+        pass1_prompt = PASS1_ATTACK_PROMPT
+    elif clip_tag == "defence":
+        instructions = DEFENCE_INSTRUCTIONS
+        pass1_prompt = PASS1_DEFENCE_PROMPT
+    elif clip_tag == "opp_attack":
+        instructions = OPP_ATTACK_INSTRUCTIONS
+        pass1_prompt = PASS1_OPP_ATTACK_PROMPT
+    else:  # opp_defence
+        instructions = OPP_DEFENCE_INSTRUCTIONS
+        pass1_prompt = PASS1_OPP_DEFENCE_PROMPT
 
     # --- Pass 1: Gemini video analysis ---
     yield f"data: {json.dumps({'status': 'Uploading to Gemini…'})}\n\n"
@@ -469,24 +618,37 @@ def two_pass_analysis_generator(tmp_path: str, clip_id: str, clip_tag: str):
     except Exception:
         pass
 
-    # --- Semantic search ---
+    # --- Quality gate ---
+    if pass1_data and should_skip_pass2(pass1_data):
+        print(f"[SKIP] Clip {clip_id} — insufficient footage, Pass 2 skipped")
+        yield f"data: {json.dumps({'status': 'Insufficient footage — skipping analysis'})}\n\n"
+        try:
+            supabase.table("clips").update({
+                "status": "complete",
+                "analysis_output": None,
+                "error_message": None,
+            }).eq("id", clip_id).execute()
+        except Exception:
+            pass
+        return
+
+    # --- Aggregated semantic search ---
     yield f"data: {json.dumps({'status': 'Searching knowledge base…'})}\n\n"
 
     knowledge_context = ""
     try:
         if pass1_data:
-            themes = pass1_data.get("tactical_themes", [])
-            patterns = pass1_data.get("patterns_observed", [])
-            structure = pass1_data.get("attacking_structure") or pass1_data.get("defensive_system") or ""
-            query = " ".join(themes + patterns + ([structure] if structure else []))
+            themes_list = aggregate_session_themes([pass1_data])
+            query = ", ".join(themes_list) if themes_list else pass1_text[:500]
         else:
             query = pass1_text[:500]
 
-        chunks = semantic_search(query, category=clip_tag, top_k=5)
+        # Map opposition tags to their base category for KB search
+        kb_category = clip_tag.replace("opp_", "") if clip_tag.startswith("opp_") else clip_tag
+        chunks = semantic_search(query, category=kb_category)
         parts = []
         for chunk in chunks:
-            header = f"{chunk.get('report_title', '')} — {chunk.get('section_heading', '')}"
-            parts.append(f"{header}\n{chunk.get('content', '')}")
+            parts.append(clean_chunk(chunk.get('content', '')))
         knowledge_context = "\n\n---\n\n".join(parts)
     except Exception:
         pass  # Proceed without knowledge base rather than failing
@@ -525,8 +687,9 @@ def fetch_knowledge_base(category: str) -> str:
     chunks = response.data
     parts = []
     for chunk in chunks:
-        header = f"## {chunk['report_title']} — {chunk['section_heading']}"
-        parts.append(f"{header}\n{chunk['content']}")
+        cleaned = clean_chunk(chunk.get('content', ''))
+        if cleaned:
+            parts.append(cleaned)
     return "\n\n---\n\n".join(parts)
 
 
@@ -536,8 +699,10 @@ COACH PROFILE
 =============
 {coach_profile}
 
-RUGBY KNOWLEDGE BASE
-====================
+RUGBY COACHING KNOWLEDGE
+========================
+Use this knowledge to inform your analysis but do not reference, cite, quote, or mention any document names, section headers, or source frameworks. The knowledge should shape your output invisibly — never surface it.
+
 {knowledge_base}
 
 ANALYSIS INSTRUCTIONS
@@ -607,11 +772,14 @@ class AnalyseClipBgRequest(BaseModel):
 class CreateMatchRequest(BaseModel):
     name: str        # Must be unique
     date: str        # ISO date string e.g. "2025-03-15"
+    match_type: str = "match"  # "match" or "opponent"
 
 
 class UpdateClipRequest(BaseModel):
-    match_id: Optional[str] = None   # None = unlink from match
-    label: Optional[str] = None      # None = clear label
+    match_id: Optional[str] = None         # None = unlink from match
+    label: Optional[str] = None            # None = clear label
+    analysis_output: Optional[str] = None  # Coach-edited analysis text
+    excluded: Optional[bool] = None        # Exclude from report generation
 
 
 # --- Endpoints ---
@@ -626,7 +794,13 @@ def health():
 @app.get("/matches")
 def get_matches(request: Request):
     user_id = get_user_id(request)
-    response = supabase.table("matches").select("*").eq("user_id", user_id).order("date", desc=True).execute()
+    response = (
+        supabase.table("matches").select("*")
+        .eq("user_id", user_id)
+        .eq("match_type", "match")
+        .order("date", desc=True)
+        .execute()
+    )
     return response.data
 
 
@@ -634,36 +808,64 @@ def get_matches(request: Request):
 def create_match(req: CreateMatchRequest, request: Request):
     user_id = get_user_id(request)
     name = req.name.strip()
+    match_type = req.match_type if req.match_type in ("match", "opponent") else "match"
     if not name:
         raise HTTPException(status_code=400, detail="Match name cannot be empty")
     if not req.date:
         raise HTTPException(status_code=400, detail="Match date cannot be empty")
 
-    # Enforce unique match name per user
-    existing = supabase.table("matches").select("id").eq("name", name).eq("user_id", user_id).execute()
+    # Enforce unique name+date per user per type
+    existing = (
+        supabase.table("matches").select("id")
+        .eq("name", name).eq("date", req.date).eq("user_id", user_id).eq("match_type", match_type)
+        .execute()
+    )
     if existing.data:
-        raise HTTPException(status_code=409, detail=f"A match named '{name}' already exists")
+        noun = "opponent" if match_type == "opponent" else "match"
+        raise HTTPException(status_code=409, detail=f"A {noun} named '{name}' on that date already exists")
 
-    record = supabase.table("matches").insert({
-        "name": name,
-        "date": req.date,
-        "user_id": user_id,
-    }).execute()
+    try:
+        record = supabase.table("matches").insert({
+            "name": name,
+            "date": req.date,
+            "user_id": user_id,
+            "match_type": match_type,
+        }).execute()
+    except Exception as e:
+        if "23505" in str(e) or "duplicate key" in str(e).lower():
+            noun = "opponent" if match_type == "opponent" else "match"
+            raise HTTPException(status_code=409, detail=f"A {noun} named '{name}' on that date already exists")
+        raise
 
     return record.data[0]
 
 
 @app.delete("/matches/{match_id}")
 def delete_match(match_id: str, request: Request):
-    """Delete a match; associated clips become untagged (match_id set to null)."""
+    """Delete a match or opponent; associated clips become untagged."""
     user_id = get_user_id(request)
     # Detach clips from this match (only this user's clips)
     supabase.table("clips").update({"match_id": None}).eq("match_id", match_id).eq("user_id", user_id).execute()
-    # Delete the match record (only if it belongs to this user)
+    # Delete the record (only if it belongs to this user)
     result = supabase.table("matches").delete().eq("id", match_id).eq("user_id", user_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Match not found")
     return {"deleted": match_id}
+
+
+# --- Opponent endpoints ---
+
+@app.get("/opponents")
+def get_opponents(request: Request):
+    user_id = get_user_id(request)
+    response = (
+        supabase.table("matches").select("*")
+        .eq("user_id", user_id)
+        .eq("match_type", "opponent")
+        .order("date", desc=True)
+        .execute()
+    )
+    return response.data
 
 
 @app.post("/analyse/attack")
@@ -814,8 +1016,8 @@ async def upload_clip_direct(
     """Receive a pre-trimmed clip blob from the browser (no full match upload needed)."""
     user_id = get_user_id(request)
 
-    if tag not in ("attack", "defence"):
-        raise HTTPException(status_code=400, detail="tag must be 'attack' or 'defence'")
+    if tag not in ("attack", "defence", "opp_attack", "opp_defence"):
+        raise HTTPException(status_code=400, detail="tag must be 'attack', 'defence', 'opp_attack', or 'opp_defence'")
     if end_time <= start_time:
         raise HTTPException(status_code=400, detail="end_time must be greater than start_time")
 
@@ -872,12 +1074,20 @@ def get_clip(clip_id: str, request: Request):
 
 @app.patch("/clips/{clip_id}")
 def update_clip(clip_id: str, req: UpdateClipRequest, request: Request):
-    """Update a clip's match association and/or label."""
+    """Update a clip's match association, label, analysis output, or excluded state."""
     user_id = get_user_id(request)
-    update_data = {
-        "match_id": req.match_id or None,
-        "label": req.label.strip() if req.label and req.label.strip() else None,
-    }
+    update_data: dict = {}
+    if req.match_id is not None or "match_id" in req.model_fields_set:
+        update_data["match_id"] = req.match_id or None
+    if req.label is not None or "label" in req.model_fields_set:
+        update_data["label"] = req.label.strip() if req.label and req.label.strip() else None
+    if req.analysis_output is not None:
+        update_data["analysis_output"] = req.analysis_output
+    if req.excluded is not None:
+        update_data["excluded"] = req.excluded
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
     response = supabase.table("clips").update(update_data).eq("id", clip_id).eq("user_id", user_id).execute()
     if not response.data:
         raise HTTPException(status_code=404, detail="Clip not found")
@@ -940,7 +1150,7 @@ async def analyse_clip(req: AnalyseClipRequest):
         raise HTTPException(status_code=404, detail="Clip not found")
     clip_tag = clip_record.data[0]["tag"]
 
-    if clip_tag not in ("attack", "defence"):
+    if clip_tag not in ("attack", "defence", "opp_attack", "opp_defence"):
         raise HTTPException(status_code=400, detail="Invalid clip tag")
 
     video_bytes = supabase.storage.from_("match-clips").download(req.clip_path)
@@ -972,3 +1182,66 @@ def delete_temp(filename: str):
         return {"deleted": filename}
 
     return {"status": "not_found"}
+
+
+# ── Automated analysis pipeline ────────────────────────────────────────────────
+
+@app.post("/auto-analysis/start")
+async def start_auto_analysis(
+    request: Request,
+    video: UploadFile = File(...),
+    our_colour: str = Form(...),
+    opp_colour: str = Form(...),
+    match_id: str = Form(...),
+):
+    user_id = get_user_id(request)
+
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY is not configured")
+
+    job_id = str(uuid.uuid4())
+
+    # Save video to a temp file that the pipeline thread will own and delete
+    suffix = ".mp4"
+    if video.filename and video.filename.lower().endswith(".mov"):
+        suffix = ".mov"
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False, dir=TEMP_DIR)
+    tmp.write(await video.read())
+    tmp.close()
+
+    auto_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "running",
+        "current_step": 1,
+        "step_name": "Initialising",
+        "current_chunk": 0,
+        "total_chunks": 0,
+        "clips_detected": 0,
+        "clips_kept": 0,
+        "failed_chunks": [],
+        "error": None,
+        "attack_report": None,
+        "defence_report": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    thread = threading.Thread(
+        target=run_automated_pipeline,
+        args=(
+            job_id, tmp.name, our_colour, opp_colour, match_id, user_id,
+            gemini, ANTHROPIC_API_KEY, supabase, embed_query,
+        ),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"job_id": job_id}
+
+
+@app.get("/auto-analysis/{job_id}")
+def get_auto_analysis_status(job_id: str, request: Request):
+    get_user_id(request)  # auth check
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job

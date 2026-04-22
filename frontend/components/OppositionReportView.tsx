@@ -1,53 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import type { SuggestedDrill } from "@/lib/drillSearch";
+import type { StructuredReport, ReportClip, TacticalTheme, Subsection, ReportPhase, SuggestedDrill } from "@/components/ReportView";
+import { SuggestedDrillsSection } from "@/components/ReportView";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type { SuggestedDrill };
-
-export interface ReportClip {
-  clip_id: string | null;
-  clip_url?: string | null;
-  timestamp: string;
-  description: string;
-  relevance_score: number;
-}
-
-export interface TacticalTheme {
-  title: string;
-  summary: string;
-  clips: ReportClip[];
-  amend?: string;
-  enhance?: string;
-  suppress?: string;
-  exploit?: string;
-  avoid?: string;
-}
-
-export interface Subsection {
-  name: string;
-  themes: TacticalTheme[];
-}
-
-export interface ReportPhase {
-  name: "attack" | "defence";
-  subsections: Subsection[];
-  suggested_drills?: SuggestedDrill[];
-}
-
-export interface StructuredReport {
-  report_type: "match" | "opposition";
-  phases: ReportPhase[];
-}
+export type { StructuredReport as OppositionReportData };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const SUBSECTION_STYLES: Record<string, { dot: string; badge: string }> = {
   "Key Takeaways":   { dot: "bg-amber-400",  badge: "bg-amber-500/15 text-amber-300 border-amber-500/25" },
-  "Positives":       { dot: "bg-green-400",  badge: "bg-green-500/15 text-green-400 border-green-500/25" },
-  "Work Ons":        { dot: "bg-red-400",    badge: "bg-red-500/15 text-red-400 border-red-500/25" },
+  "Strengths":       { dot: "bg-green-400",  badge: "bg-green-500/15 text-green-400 border-green-500/25" },
+  "Weaknesses":      { dot: "bg-red-400",    badge: "bg-red-500/15 text-red-400 border-red-500/25" },
+  "How to Defend":   { dot: "bg-blue-400",   badge: "bg-blue-500/15 text-blue-400 border-blue-500/25" },
+  "How to Attack":   { dot: "bg-blue-400",   badge: "bg-blue-500/15 text-blue-400 border-blue-500/25" },
   "Suggested Drills":{ dot: "bg-violet-400", badge: "bg-violet-500/15 text-violet-400 border-violet-500/25" },
 };
 
@@ -120,28 +86,36 @@ function ThemeCard({ theme }: { theme: TacticalTheme }) {
           {topClips.map((clip, i) => <ClipCard key={i} clip={clip} />)}
         </div>
       )}
-      {theme.amend && (
+      {theme.suppress && (
         <div className="border-t border-white/8 pt-3">
-          <p className="text-red-400/70 text-xs font-semibold mb-1">Amend</p>
-          <p className="text-white/60 text-sm leading-relaxed">{theme.amend}</p>
+          <p className="text-blue-400/70 text-xs font-semibold mb-1">Suppress</p>
+          <p className="text-white/60 text-sm leading-relaxed">{theme.suppress}</p>
         </div>
       )}
-      {theme.enhance && (
+      {theme.exploit && (
         <div className="border-t border-white/8 pt-3">
-          <p className="text-green-400/70 text-xs font-semibold mb-1">Enhance</p>
-          <p className="text-white/60 text-sm leading-relaxed">{theme.enhance}</p>
+          <p className="text-orange-400/70 text-xs font-semibold mb-1">Exploit</p>
+          <p className="text-white/60 text-sm leading-relaxed">{theme.exploit}</p>
+        </div>
+      )}
+      {theme.avoid && (
+        <div className="border-t border-white/8 pt-3">
+          <p className="text-blue-400/70 text-xs font-semibold mb-1">Avoid</p>
+          <p className="text-white/60 text-sm leading-relaxed">{theme.avoid}</p>
         </div>
       )}
     </div>
   );
 }
 
-// ─── KeyTakeawaysPanel ────────────────────────────────────────────────────────
+// ─── OppKeyTakeawaysPanel ─────────────────────────────────────────────────────
 
-function KeyTakeawaysPanel({ phase }: { phase: ReportPhase }) {
+function OppKeyTakeawaysPanel({ phase }: { phase: ReportPhase }) {
   const overview = phase.subsections.find((s) => s.name === "Key Takeaways")?.themes[0]?.summary ?? "";
-  const positives = phase.subsections.find((s) => s.name === "Positives")?.themes ?? [];
-  const workOns = phase.subsections.find((s) => s.name === "Work Ons")?.themes ?? [];
+  const strengths = phase.subsections.find((s) => s.name === "Strengths")?.themes ?? [];
+  const weaknesses = phase.subsections.find((s) => s.name === "Weaknesses")?.themes ?? [];
+  const howTo = phase.subsections.find((s) => s.name === "How to Defend" || s.name === "How to Attack");
+  const howToLabel = phase.name === "attack" ? "How to Defend" : "How to Attack";
 
   return (
     <div className="space-y-6">
@@ -151,26 +125,46 @@ function KeyTakeawaysPanel({ phase }: { phase: ReportPhase }) {
           <p className="text-white/70 text-sm leading-relaxed">{overview}</p>
         </div>
       )}
-      {positives.length > 0 && (
+      {(strengths.length > 0 || weaknesses.length > 0) && (
         <div>
-          <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-3">Positives</p>
-          <ul className="space-y-2">
-            {positives.map((t, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm text-white/70">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 mt-1.5 shrink-0" />
-                <span>{t.title}</span>
-              </li>
-            ))}
-          </ul>
+          <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-3">Tactical Insight</p>
+          <div className="space-y-4">
+            {strengths.length > 0 && (
+              <div>
+                <p className="text-green-400/70 text-xs font-semibold mb-2">Strengths</p>
+                <ul className="space-y-2">
+                  {strengths.map((t, i) => (
+                    <li key={i} className="flex items-start gap-2.5 text-sm text-white/70">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 mt-1.5 shrink-0" />
+                      <span>{t.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {weaknesses.length > 0 && (
+              <div>
+                <p className="text-red-400/70 text-xs font-semibold mb-2">Weaknesses</p>
+                <ul className="space-y-2">
+                  {weaknesses.map((t, i) => (
+                    <li key={i} className="flex items-start gap-2.5 text-sm text-white/70">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
+                      <span>{t.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       )}
-      {workOns.length > 0 && (
+      {(howTo?.themes.length ?? 0) > 0 && (
         <div>
-          <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-3">Work Ons</p>
+          <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-3">{howToLabel}</p>
           <ul className="space-y-2">
-            {workOns.map((t, i) => (
+            {howTo!.themes.map((t, i) => (
               <li key={i} className="flex items-start gap-2.5 text-sm text-white/70">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0" />
                 <span>{t.title}</span>
               </li>
             ))}
@@ -194,78 +188,14 @@ function SubsectionPanel({ subsection }: { subsection: Subsection }) {
   );
 }
 
-// ─── DrillCard ────────────────────────────────────────────────────────────────
+// ─── OppositionReportView ─────────────────────────────────────────────────────
 
-function DrillCard({ drill }: { drill: SuggestedDrill }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-      <button
-        onClick={() => setOpen((p) => !p)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
-      >
-        <p className="text-white font-semibold text-sm">{drill.title}</p>
-        <svg
-          className={`w-4 h-4 text-white/30 shrink-0 ml-3 transition-transform ${open ? "rotate-180" : ""}`}
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      {open && (
-        <div className="px-4 pb-4 space-y-3 border-t border-white/8 pt-3">
-          {drill.setup && (
-            <div>
-              <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-1">Set Up</p>
-              <p className="text-white/70 text-sm leading-relaxed whitespace-pre-line">{drill.setup}</p>
-            </div>
-          )}
-          {drill.key_focus && (
-            <div>
-              <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-1">Key Focus</p>
-              <p className="text-white/70 text-sm leading-relaxed whitespace-pre-line">{drill.key_focus}</p>
-            </div>
-          )}
-          {drill.progression && (
-            <div>
-              <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-1">Progression</p>
-              <p className="text-white/70 text-sm leading-relaxed whitespace-pre-line">{drill.progression}</p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── SuggestedDrillsSection ───────────────────────────────────────────────────
-
-export function SuggestedDrillsSection({ drills }: { drills: SuggestedDrill[] }) {
-  if (!drills.length) return null;
-  return (
-    <div className="mt-8">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="h-px flex-1 bg-white/10" />
-        <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-          <span className="text-white/40 text-xs font-semibold uppercase tracking-wider">Suggested Drills</span>
-        </div>
-        <div className="h-px flex-1 bg-white/10" />
-      </div>
-      <div className="space-y-3">
-        {drills.map((drill, i) => <DrillCard key={i} drill={drill} />)}
-      </div>
-    </div>
-  );
-}
-
-// ─── ReportView ───────────────────────────────────────────────────────────────
-
-export default function ReportView({ report }: { report: StructuredReport }) {
-  const phase = report.phases?.[0];
+export default function OppositionReportView({ report }: { report: StructuredReport }) {
+  const phase = report.phases?.[0] as ReportPhase | undefined;
   const subsections = phase?.subsections ?? [];
   const hasDrills = (phase?.suggested_drills?.length ?? 0) > 0;
-  const tabs = [...subsections.map((s) => s.name), ...(hasDrills ? [DRILLS_TAB] : [])];
+  const HIDDEN_TABS = new Set(["How to Defend", "How to Attack"]);
+  const tabs = [...subsections.map((s) => s.name).filter((n) => !HIDDEN_TABS.has(n)), ...(hasDrills ? [DRILLS_TAB] : [])];
 
   const [active, setActive] = useState<string>(tabs[0] ?? "");
 
@@ -303,9 +233,9 @@ export default function ReportView({ report }: { report: StructuredReport }) {
       </div>
 
       {isDrillsTab ? (
-        <SuggestedDrillsSection drills={phase.suggested_drills!} />
+        <SuggestedDrillsSection drills={phase.suggested_drills as SuggestedDrill[]} />
       ) : isKeyTakeaways ? (
-        <KeyTakeawaysPanel phase={phase} />
+        <OppKeyTakeawaysPanel phase={phase} />
       ) : (
         <>
           {/* Active subsection label */}

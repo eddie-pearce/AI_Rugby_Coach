@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/apiFetch";
+import { formatAnalysisOutput } from "@/lib/formatAnalysis";
 
 type Tag = "attack" | "defence";
 
@@ -234,7 +235,7 @@ export default function ClipBrowser({ tag }: { tag: Tag }) {
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-xl px-6 py-6 max-h-[60vh] overflow-y-auto">
                       <pre ref={analysisRef} className="text-white/85 text-sm leading-7 whitespace-pre-wrap font-sans">
-                        {analysis}
+                        {streaming ? analysis : formatAnalysisOutput(analysis)}
                       </pre>
                     </div>
                   </div>

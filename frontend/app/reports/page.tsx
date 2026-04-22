@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { createClient } from "@/lib/supabase/client";
-import ReportView from "@/components/ReportView";
+import ReportView, { type StructuredReport } from "@/components/ReportView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,21 +13,11 @@ interface Match {
   date: string;
 }
 
-interface WentWellItem { header: string; bullets: string[] }
-interface WorkOn { area: string; priority: "high" | "medium"; bullets: string[] }
-interface Drill {
-  priority_order: number; drill_name: string;
-  targets: string; setup: string; key_focus: string; progression: string;
-}
-
 interface Report {
   id: string;
   session_id: string;
   report_type: "attack" | "defence";
-  overview: string;
-  went_well: WentWellItem[];
-  work_ons: WorkOn[];
-  suggested_drills: Drill[];
+  report_data: StructuredReport | null;
   created_at: string;
 }
 
@@ -107,7 +97,7 @@ function TabPanel({ label, matchId, report, loading, noClips, error, onGenerate 
         </div>
       )}
 
-      {!loading && report && <ReportView report={report} />}
+      {!loading && report?.report_data && <ReportView report={report.report_data} />}
     </div>
   );
 }
