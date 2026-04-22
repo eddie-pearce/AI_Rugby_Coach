@@ -386,7 +386,7 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
     try {
       const res = await apiFetch(`${API}/clips`);
       const data: Clip[] = await res.json();
-      setClips(data);
+      setClips(Array.isArray(data) ? data : []);
       // Resume polling for any clips that were in-progress before this fetch
       data.forEach(clip => {
         if (clip.status === 'pending' || clip.status === 'analysing') pollUntilDone(clip.id);
