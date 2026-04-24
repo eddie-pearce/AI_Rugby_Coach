@@ -360,8 +360,6 @@ After your Step 1 analysis, return the JSON report. No markdown fences around th
   const claudeData = await claudeRes.json() as { content: { text: string }[] };
   const text = claudeData.content[0].text;
 
-  console.log("\n=== RAW AI REPORT OUTPUT ===\n", text, "\n=== END ===\n");
-
   let reportData: Record<string, unknown>;
   let cot = "";
   try {

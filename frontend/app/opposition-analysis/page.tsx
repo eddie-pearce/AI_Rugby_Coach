@@ -66,11 +66,8 @@ function OpponentDetail({ opponent }: { opponent: Opponent }) {
       } catch {
         throw new Error("The report took too long to generate. Please try again.");
       }
+      if (!res.ok) throw new Error((data.error as string) ?? "Failed to generate report");
       if (data.noClips) { setGenError(`No analysed opposition ${label.toLowerCase()} clips found.`); return; }
-      if (!res.ok) {
-        if (data.raw) console.error("AI raw response:", data.raw);
-        throw new Error((data.error as string) ?? "Failed to generate report");
-      }
       setReports((prev) => {
         const filtered = prev.filter((r) => r.report_type !== tag);
         return [...filtered, data as unknown as OppReport];

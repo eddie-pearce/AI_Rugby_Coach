@@ -59,8 +59,8 @@ function MatchDetail({ match }: { match: Match }) {
         body: JSON.stringify({ match_id: match.id, label: tag.charAt(0).toUpperCase() + tag.slice(1) }),
       });
       const data = await res.json();
-      if (data.noClips) { setGenError(`No analysed ${tag} clips found for this match.`); return; }
       if (!res.ok) throw new Error(data.error ?? "Failed to generate report");
+      if (data.noClips) { setGenError(`No analysed ${tag} clips found for this match.`); return; }
       setReports((prev) => {
         const filtered = prev.filter((r) => r.report_type !== tag);
         return [...filtered, data as Report];
