@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { createClient } from "@/lib/supabase/client";
-import ReportView, { type StructuredReport } from "@/components/ReportView";
+import ReportView, { ProseReportView, DirectReportView, type StructuredReport, type DirectReport } from "@/components/ReportView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ interface Report {
   id: string;
   session_id: string;
   report_type: "attack" | "defence";
-  report_data: StructuredReport | null;
+  report_data: { prose: string } | DirectReport | StructuredReport | null;
   created_at: string;
 }
 
@@ -97,7 +97,13 @@ function TabPanel({ label, matchId, report, loading, noClips, error, onGenerate 
         </div>
       )}
 
-      {!loading && report?.report_data && <ReportView report={report.report_data} />}
+      {!loading && report?.report_data && (
+        "prose" in report.report_data
+          ? <ProseReportView prose={(report.report_data as { prose: string }).prose} />
+          : "format" in report.report_data && (report.report_data as DirectReport).format === "direct"
+          ? <DirectReportView report={report.report_data as DirectReport} />
+          : <ReportView report={report.report_data as StructuredReport} />
+      )}
     </div>
   );
 }

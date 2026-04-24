@@ -364,10 +364,10 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
         const res = await apiFetch(`${API}/clips/${clipId}`);
         if (!res.ok) return;
         const clip: Clip = await res.json();
+        setClips(prev => prev.map(c => c.id === clipId ? clip : c));
         if (clip.status === 'complete' || clip.status === 'failed') {
           clearInterval(pollIntervals.current.get(clipId)!);
           pollIntervals.current.delete(clipId);
-          setClips(prev => prev.map(c => c.id === clipId ? clip : c));
         }
       } catch { /* silently ignore */ }
     }, 3000);
@@ -612,11 +612,13 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
   }
 
   async function handleBulkReanalyse() {
-    if (!window.confirm(`Re-analyse all ${clips.length} clip${clips.length !== 1 ? "s" : ""} through the updated pipeline?\n\nThis will reset and re-run every clip. It may take several minutes.`)) return;
+    const matchClips = clips.filter((c) => c.match_id === matchId);
+    const matchName = matches.find((m) => m.id === matchId)?.name ?? "this match";
+    if (!window.confirm(`Re-analyse ${matchClips.length} clip${matchClips.length !== 1 ? "s" : ""} for "${matchName}" through the updated pipeline?\n\nThis will reset and re-run every clip for this match. It may take several minutes.`)) return;
     setBulkAnalysing(true);
-    setBulkProgress({ done: 0, total: clips.length });
+    setBulkProgress({ done: 0, total: matchClips.length });
     let done = 0;
-    for (const clip of clips) {
+    for (const clip of matchClips) {
       try {
         // Reset status to pending in local state immediately
         setClips((prev) => prev.map((c) => c.id === clip.id ? { ...c, status: "pending" } : c));
@@ -628,7 +630,7 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
         pollUntilDone(clip.id);
       } catch { /* best-effort — continue to next clip */ }
       done++;
-      setBulkProgress({ done, total: clips.length });
+      setBulkProgress({ done, total: matchClips.length });
       // Small gap between requests to avoid overwhelming the server
       await new Promise((r) => setTimeout(r, 300));
     }
@@ -825,18 +827,20 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
 
                 {/* Phase */}
                 <div>
-                  <p className="text-white/40 text-xs mb-2">Phase <span className="text-red-400">*</span></p>
+                  <p className="text-white/40 text-xs mb-2">Sequence Start <span className="text-red-400">*</span></p>
                   <select
                     value={phase}
                     onChange={(e) => setPhase(e.target.value)}
                     className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-white/50 appearance-none text-white [&>option]:bg-[#111] [&>option]:text-white"
                   >
-                    <option value="" disabled>Select phase…</option>
-                    <option value="Set Piece — Scrum">Set Piece — Scrum</option>
-                    <option value="Set Piece — Lineout">Set Piece — Lineout</option>
+                    <option value="" disabled>Select sequence start…</option>
+                    <option value="Scrum">Scrum</option>
+                    <option value="Lineout">Lineout</option>
+                    <option value="Kick Return">Kick Return</option>
+                    <option value="Restart Return">Restart Return</option>
                     <option value="Phase Play / Breakdown">Phase Play / Breakdown</option>
-                    <option value="Transition">Transition</option>
-                    <option value="Kick Receipt / Counter Attack">Kick Receipt / Counter Attack</option>
+                    <option value="Tap Pen">Tap Pen</option>
+                    <option value="Turnover / Transition">Turnover / Transition</option>
                   </select>
                 </div>
 
@@ -966,16 +970,16 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
             <div className="bg-white/5 border border-white/10 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-white font-semibold text-base">Saved Clips</h2>
-                {clips.length > 0 && (
+                {!loadingClips && matchId && clips.some((c) => c.match_id === matchId) && (
                   <button
                     onClick={handleBulkReanalyse}
                     disabled={bulkAnalysing}
-                    title="Re-analyse all clips through the updated pipeline"
+                    title="Re-analyse all clips for the selected match"
                     className="text-xs text-white/40 hover:text-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     {bulkAnalysing && bulkProgress
                       ? `Re-analysing… ${bulkProgress.done}/${bulkProgress.total}`
-                      : "Re-analyse all"}
+                      : "Re-analyse match"}
                   </button>
                 )}
               </div>

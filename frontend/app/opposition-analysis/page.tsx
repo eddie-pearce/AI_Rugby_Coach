@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/apiFetch";
-import OppositionReportView from "@/components/OppositionReportView";
-import type { StructuredReport } from "@/components/ReportView";
+import OppDirectReportView from "@/components/OppositionReportView";
+import type { DirectReport } from "@/components/ReportView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,7 +16,7 @@ interface Opponent {
 interface OppReport {
   id: string;
   report_type: "opp_attack" | "opp_defence";
-  report_data: StructuredReport | null;
+  report_data: DirectReport | null;
   created_at: string;
 }
 
@@ -73,7 +73,7 @@ function OpponentDetail({ opponent }: { opponent: Opponent }) {
       }
       setReports((prev) => {
         const filtered = prev.filter((r) => r.report_type !== tag);
-        return [...filtered, data as OppReport];
+        return [...filtered, data as unknown as OppReport];
       });
 
     } catch (err) {
@@ -133,7 +133,7 @@ function OpponentDetail({ opponent }: { opponent: Opponent }) {
             </button>
           </div>
           {genError && <p className="text-red-400 text-sm mb-4">{genError}</p>}
-          {tagReport?.report_data && <OppositionReportView report={tagReport.report_data} />}
+          {tagReport?.report_data && <OppDirectReportView report={tagReport.report_data} />}
         </div>
       )}
     </div>

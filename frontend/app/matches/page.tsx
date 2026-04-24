@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/apiFetch";
-import ReportView, { type StructuredReport } from "@/components/ReportView";
+import ReportView, { ProseReportView, DirectReportView, type StructuredReport, type DirectReport } from "@/components/ReportView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,7 +15,7 @@ interface Match {
 interface Report {
   id: string;
   report_type: "attack" | "defence";
-  report_data: StructuredReport | null;
+  report_data: { prose: string } | DirectReport | StructuredReport | null;
   created_at: string;
 }
 
@@ -123,7 +123,13 @@ function MatchDetail({ match }: { match: Match }) {
             </button>
           </div>
           {genError && <p className="text-red-400 text-sm mb-4">{genError}</p>}
-          {tagReport?.report_data && <ReportView report={tagReport.report_data} />}
+          {tagReport?.report_data && (
+            "prose" in tagReport.report_data
+              ? <ProseReportView prose={(tagReport.report_data as { prose: string }).prose} />
+              : "format" in tagReport.report_data && (tagReport.report_data as DirectReport).format === "direct"
+              ? <DirectReportView report={tagReport.report_data as DirectReport} />
+              : <ReportView report={tagReport.report_data as StructuredReport} />
+          )}
         </div>
       )}
     </div>
