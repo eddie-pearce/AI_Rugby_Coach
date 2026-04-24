@@ -99,17 +99,18 @@ const nav: NavItem[] = [
       },
     ],
   },
-  {
-    type: "link",
-    href: "/training",
-    label: "Training",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 shrink-0">
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-        <polyline points="17 6 23 6 23 12" />
-      </svg>
-    ),
-  },
+  // Training nav item hidden — feature not yet released
+  // {
+  //   type: "link",
+  //   href: "/training",
+  //   label: "Training",
+  //   icon: (
+  //     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 shrink-0">
+  //       <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+  //       <polyline points="17 6 23 6 23 12" />
+  //     </svg>
+  //   ),
+  // },
 ];
 
 const profileIcon = (
@@ -197,19 +198,10 @@ export default function Sidebar() {
     >
       {/* ── Brand — desktop only ───────────────────────────────────────── */}
       <div className="hidden lg:flex items-center gap-2.5 px-4 py-5 mb-2">
-        <div
-          className="w-6 h-6 rounded flex items-center justify-center shrink-0"
-          style={{ backgroundColor: "var(--color-accent)" }}
-        >
-          <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5">
-            <path d="M3 12 L8 4 L13 12 M5.5 9 L10.5 9" stroke="white" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
         <span
-          className="font-condensed font-700 text-[15px] tracking-wide"
-          style={{ color: "var(--color-hi)", fontFamily: "var(--font-condensed)", fontWeight: 700, letterSpacing: "0.04em" }}
+          style={{ color: "var(--color-hi)", fontFamily: "'Trebuchet MS', Trebuchet, sans-serif", fontWeight: 700, fontSize: "22px", letterSpacing: "0.02em" }}
         >
-          BREAKDOWNAI
+          BreakdownAI
         </span>
       </div>
 

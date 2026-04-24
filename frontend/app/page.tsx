@@ -82,11 +82,11 @@ export default function Home() {
           </p>
 
           <p className="text-white/60 text-lg mb-10 max-w-xl mx-auto leading-relaxed">
-            Upload a match, clip your sequences, and get a full attack and defence report in minutes.
+            Clip your match footage, run AI analysis on every sequence, and generate full attack, defence, and opposition scouting reports.
           </p>
 
           <Link
-            href={user ? "/clipping" : "/signup"}
+            href={user ? "/match-analysis/clipping" : "/signup"}
             className="inline-block px-6 py-3 rounded-md bg-white text-black text-sm font-semibold hover:brightness-90 transition-all"
           >
             Get Started
@@ -95,16 +95,32 @@ export default function Home() {
           {/* Steps */}
           <div className="mt-16 grid grid-cols-1 gap-2 text-left max-w-lg mx-auto">
             {[
-              { step: "1", title: "Clipping", desc: "Upload a match and mark in/out points to save attack and defence clips." },
-              { step: "2", title: "Analysis", desc: "Select a clip and run AI analysis. Results are saved automatically." },
-              { step: "3", title: "Reports", desc: "Generate a full attack or defence report synthesised across all clips from a match." },
-              { step: "4", title: "Matches", desc: "View all clips and reports for a match in one place — watch footage and read analysis side by side." },
+              {
+                step: "1",
+                title: "Clip",
+                desc: "Upload your match footage and mark in/out points to clip attack and defence sequences.",
+              },
+              {
+                step: "2",
+                title: "Analyse",
+                desc: "The AI analyses each clip individually — identifying the system, tactical themes, and positives/work ons to generate actionable coaching insights.",
+              },
+              {
+                step: "3",
+                title: "Report",
+                desc: "Generate a comprehensive attack/defence report covering system, tactics, and execution — pinpointing areas to address in training, fixing weaknesses and building on strengths.",
+              },
+              {
+                step: "4",
+                title: "Opposition Analysis",
+                desc: "Clip and analyse opposition attack/defence sequences to generate a full scouting report on their system, tactics, strengths, and vulnerabilities — with clear intel on how to expose weaknesses and suppress their threats.",
+              },
             ].map(({ step, title, desc }) => (
               <div key={step} className="flex gap-4 bg-transparent border border-white/10 rounded-md px-4 py-3">
                 <span className="text-white/30 font-bold text-sm leading-none mt-0.5 w-4 shrink-0">{step}</span>
                 <div>
                   <p className="text-white font-semibold text-sm">{title}</p>
-                  <p className="text-white/35 text-sm mt-0.5 leading-snug">{desc}</p>
+                  <p className="text-white/60 text-sm mt-0.5 leading-snug">{desc}</p>
                 </div>
               </div>
             ))}

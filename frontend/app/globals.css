@@ -2,9 +2,8 @@
 
 @theme {
   /* ── Fonts ─────────────────────────────────────────────────────── */
-  --font-sans:      var(--font-barlow), 'Barlow', sans-serif;
-  --font-condensed: var(--font-barlow-condensed), 'Barlow Condensed', sans-serif;
-  --font-mono:      var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  --font-sans: 'Trebuchet MS', Trebuchet, sans-serif;
+  --font-mono: var(--font-barlow), 'Barlow', sans-serif;
 
   /* ── Background layers ──────────────────────────────────────────── */
   --color-bg:         #0d0f11;
