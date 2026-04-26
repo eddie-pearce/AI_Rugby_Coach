@@ -1080,7 +1080,8 @@ def get_opponents(request: Request):
 
 
 @app.post("/analyse/attack")
-async def analyse_attack(file: UploadFile = File(...)):
+async def analyse_attack(request: Request, file: UploadFile = File(...)):
+    get_user_id(request)
     if not file.filename.endswith(".mp4"):
         raise HTTPException(status_code=400, detail="Only .mp4 files are supported")
 
@@ -1098,7 +1099,8 @@ async def analyse_attack(file: UploadFile = File(...)):
 
 
 @app.post("/analyse/defence")
-async def analyse_defence(file: UploadFile = File(...)):
+async def analyse_defence(request: Request, file: UploadFile = File(...)):
+    get_user_id(request)
     if not file.filename.endswith(".mp4"):
         raise HTTPException(status_code=400, detail="Only .mp4 files are supported")
 
@@ -1116,7 +1118,8 @@ async def analyse_defence(file: UploadFile = File(...)):
 
 
 @app.post("/upload/match")
-async def upload_match(file: UploadFile = File(...)):
+async def upload_match(request: Request, file: UploadFile = File(...)):
+    get_user_id(request)
     if not file.filename.endswith((".mp4", ".mov")):
         raise HTTPException(status_code=400, detail="Only .mp4 and .mov files are supported")
 
@@ -1142,7 +1145,8 @@ async def upload_match(file: UploadFile = File(...)):
 
 
 @app.post("/clips/save")
-async def save_clip(req: SaveClipRequest):
+async def save_clip(req: SaveClipRequest, request: Request):
+    user_id = get_user_id(request)
     if req.tag not in ("attack", "defence"):
         raise HTTPException(status_code=400, detail="tag must be 'attack' or 'defence'")
     if req.end_time <= req.start_time:
@@ -1204,6 +1208,7 @@ async def save_clip(req: SaveClipRequest):
             "end_time": req.end_time,
             "tag": req.tag,
             "label": req.label or None,
+            "user_id": user_id,
         }).execute()
 
         return record.data[0]
@@ -1344,7 +1349,8 @@ def delete_clip(clip_id: str, request: Request):
 
 
 @app.post("/analyse/clip/bg")
-def analyse_clip_bg(req: AnalyseClipBgRequest):
+def analyse_clip_bg(req: AnalyseClipBgRequest, request: Request):
+    get_user_id(request)
     """Queue a clip for background analysis — returns immediately."""
     import threading
     clip_record = supabase.table("clips").select("tag, clip_path").eq("id", req.clip_id).execute()
@@ -1363,7 +1369,8 @@ def analyse_clip_bg(req: AnalyseClipBgRequest):
 
 
 @app.post("/analyse/clip")
-async def analyse_clip(req: AnalyseClipRequest):
+async def analyse_clip(req: AnalyseClipRequest, request: Request):
+    get_user_id(request)
     clip_record = supabase.table("clips").select("tag").eq("id", req.clip_id).execute()
     if not clip_record.data:
         raise HTTPException(status_code=404, detail="Clip not found")
@@ -1388,7 +1395,8 @@ async def analyse_clip(req: AnalyseClipRequest):
 
 
 @app.delete("/temp/{filename}")
-def delete_temp(filename: str):
+def delete_temp(filename: str, request: Request):
+    get_user_id(request)
     """Delete a cached temp match file when a session is done."""
     local_path = os.path.join(TEMP_DIR, filename)
     storage_path = f"matches/{filename}"
