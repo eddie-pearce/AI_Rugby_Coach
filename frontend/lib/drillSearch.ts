@@ -71,7 +71,8 @@ export async function fetchSuggestedDrills(
       return [];
     }
 
-    const { data: chunks, error } = await supabase.rpc("match_rugby_knowledge", {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: chunks, error } = await (supabase as any).rpc("match_rugby_knowledge", {
       query_embedding: embedding,
       match_count: 15,
       filter_category: "drills",
