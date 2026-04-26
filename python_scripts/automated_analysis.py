@@ -13,7 +13,7 @@ and logged, and every step's output is written to debug_output/job_<id>/pipeline
 """
 
 # ── Debug flag ─────────────────────────────────────────────────────────────────
-DEBUG_MODE = True   # Set to False for production (enables full cleanup, no logging)
+DEBUG_MODE = False  # Set to True locally to preserve intermediate files and enable logging
 
 import json
 import os
