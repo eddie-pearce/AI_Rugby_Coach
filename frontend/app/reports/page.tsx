@@ -3,6 +3,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { createClient } from "@/lib/supabase/client";
+
+const API = process.env.NEXT_PUBLIC_API_URL;
 import ReportView, { ProseReportView, DirectReportView, type StructuredReport, type DirectReport } from "@/components/ReportView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -148,7 +150,7 @@ export default function ReportsPage() {
   useEffect(() => {
     async function loadMatches() {
       try {
-        const res = await apiFetch("http://localhost:8000/matches");
+        const res = await apiFetch(`${API}/matches`);
         if (!res.ok) throw new Error("Failed to load matches");
         const data: Match[] = await res.json();
         setMatches(data);
