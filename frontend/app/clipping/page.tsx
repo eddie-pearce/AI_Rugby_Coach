@@ -654,8 +654,8 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
             {[
               { n: "1", text: "Upload the full match mp4/mov file using the panel on the left." },
               { n: "2", text: "Clip significant attack or defence sequences you would like analysed." },
-              { n: "3", text: "Use the video player to find the start of a sequence, then press Mark In." },
-              { n: "4", text: "Find the end of the sequence and press Mark Out." },
+              { n: "3", text: "Use the video player to find the start of a sequence, then press Mark Start." },
+              { n: "4", text: "Find the end of the sequence and press Mark End." },
               { n: "5", text: "Choose a label, select Attack or Defence, then press Save Clip." },
               { n: "6", text: "Repeat for every sequence you want analysed. The AI will analyse each clip automatically in the background." },
             ].map(({ n, text }) => (
@@ -753,13 +753,13 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
             {videoUrl && (
               <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-5">
 
-                {/* Mark In / Out */}
+                {/* Mark Start / Out */}
                 <div className="flex gap-3">
                   <button
                     onClick={() => markCurrentTime("in")}
                     className="flex-1 py-2.5 rounded-lg bg-white/10 text-white font-medium text-sm hover:bg-white/20 transition-colors"
                   >
-                    Mark In
+                    Mark Start
                     {markIn !== null && (
                       <span className="ml-2 text-white font-mono text-xs">{formatTime(markIn)}</span>
                     )}
@@ -768,7 +768,7 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
                     onClick={() => markCurrentTime("out")}
                     className="flex-1 py-2.5 rounded-lg bg-white/10 text-white font-medium text-sm hover:bg-white/20 transition-colors"
                   >
-                    Mark Out
+                    Mark End
                     {markOut !== null && (
                       <span className="ml-2 text-white font-mono text-xs">{formatTime(markOut)}</span>
                     )}
