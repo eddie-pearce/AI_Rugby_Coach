@@ -211,15 +211,20 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
             recorder.start(100);
             hidden.play().catch((e) => { cleanup(); reject(e); });
 
+            let lastProgressUpdate = 0;
             const checkEnd = () => {
               if (cancelled) return;
               if (hidden.currentTime >= item.markOut) {
                 recorder.stop();
               } else {
-                const elapsed = hidden.currentTime - item.markIn;
-                updateItem({
-                  progress: Math.min(99, Math.round((elapsed / duration) * 100)),
-                });
+                const now = Date.now();
+                if (now - lastProgressUpdate >= 500) {
+                  lastProgressUpdate = now;
+                  const elapsed = hidden.currentTime - item.markIn;
+                  updateItem({
+                    progress: Math.min(99, Math.round((elapsed / duration) * 100)),
+                  });
+                }
                 requestAnimationFrame(checkEnd);
               }
             };
