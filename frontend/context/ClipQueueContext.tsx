@@ -40,6 +40,7 @@ export interface ClipQueueContextValue {
     item: Omit<QueueItem, "queueId" | "status" | "progress" | "videoUrl">
   ) => void;
   cancelItem: (queueId: string) => void;
+  retryItem: (queueId: string) => void;
   /** Called by the clipping page after upload so it can refresh its clips list */
   onClipSaved: React.MutableRefObject<(() => void) | null>;
 }
@@ -355,6 +356,17 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
     if (cancel) cancel();
   }
 
+  // ── retryItem ──
+
+  function retryItem(queueId: string) {
+    const item = queueRef.current.find((i) => i.queueId === queueId);
+    if (!item || item.status !== "failed") return;
+    updateQueue((prev) =>
+      prev.map((i) => i.queueId === queueId ? { ...i, status: "queued", progress: 0, error: undefined } : i)
+    );
+    tryStartNext();
+  }
+
   // ── addToQueue ──
 
   function addToQueue(
@@ -384,6 +396,7 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
         changeVideoFile,
         addToQueue,
         cancelItem,
+        retryItem,
         onClipSaved,
       }}
     >

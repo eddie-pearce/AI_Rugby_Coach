@@ -302,7 +302,7 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
   const retryCountsRef = useRef<Map<string, number>>(new Map());
 
   // ── Clip queue (global context — survives navigation) ──
-  const { queue, videoFile, videoUrl, setVideoFile, changeVideoFile, addToQueue: ctxAddToQueue, cancelItem, onClipSaved } = useClipQueue();
+  const { queue, videoFile, videoUrl, setVideoFile, changeVideoFile, addToQueue: ctxAddToQueue, cancelItem, retryItem, onClipSaved } = useClipQueue();
 
   const [clipMode, setClipMode] = useState<ClipMode>(fixedMode ?? "self");
 
@@ -895,7 +895,15 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
                             <span className="text-green-400 text-xs">Done</span>
                           )}
                           {item.status === 'failed' && (
-                            <span className="text-red-400 text-xs" title={item.error}>Failed</span>
+                            <>
+                              <span className="text-red-400 text-xs" title={item.error}>Failed</span>
+                              <button
+                                onClick={() => retryItem(item.queueId)}
+                                className="text-white/40 hover:text-white text-xs underline underline-offset-2 transition-colors"
+                              >
+                                Retry
+                              </button>
+                            </>
                           )}
                           {(item.status === 'queued' || item.status === 'recording' || item.status === 'uploading') && (
                             <button
