@@ -12,6 +12,7 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,8 +40,8 @@ export default function SignupPage() {
       return;
     }
 
-    router.push("/");
-    router.refresh();
+    setConfirmed(true);
+    setLoading(false);
   }
 
   return (
@@ -58,6 +59,13 @@ export default function SignupPage() {
         <p className="text-white/40 text-sm text-center mb-8">
           Get started with BreakdownAI
         </p>
+
+        {confirmed && (
+          <div className="bg-white/10 border border-white/20 rounded-lg px-4 py-3 mb-6 text-center">
+            <p className="text-white text-sm font-medium">Confirmation email sent</p>
+            <p className="text-white/50 text-xs mt-1">Check your inbox and click the link to complete signup.</p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
