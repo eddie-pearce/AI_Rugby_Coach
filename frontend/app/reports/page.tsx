@@ -174,7 +174,7 @@ export default function ReportsPage() {
     setDefenceError("");
 
     try {
-      const res = await fetch(`/api/generate-report?match_id=${encodeURIComponent(mid)}`);
+      const res = await apiFetch(`${API}/generate-report?match_id=${encodeURIComponent(mid)}`);
       if (!res.ok) throw new Error("Failed to load reports");
       const data: Report[] = await res.json();
       const atk = data.find((r) => r.report_type === "attack");
@@ -206,7 +206,7 @@ export default function ReportsPage() {
     }
 
     try {
-      const res = await fetch("/api/generate-report", {
+      const res = await apiFetch(`${API}/generate-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ match_id: selectedMatchId, label, ...(teamId ? { team_id: teamId } : {}) }),

@@ -993,6 +993,17 @@ class UpdateClipRequest(BaseModel):
     excluded: Optional[bool] = None        # Exclude from report generation
 
 
+class GenerateReportRequest(BaseModel):
+    match_id: str
+    label: str   # "Attack" or "Defence"
+    team_id: Optional[str] = None
+
+
+class GenerateOppositionReportRequest(BaseModel):
+    match_id: str
+    label: str   # "Attack" or "Defence"
+
+
 # --- Endpoints ---
 
 @app.get("/health")
@@ -1472,3 +1483,416 @@ def get_auto_analysis_status(job_id: str, request: Request):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+# ── Report generation ──────────────────────────────────────────────────────────
+
+def _fmt_ts(seconds: float) -> str:
+    m = int(seconds // 60)
+    s = int(seconds % 60)
+    return f"{m}:{str(s).zfill(2)}"
+
+def _clip_timestamp(start: float, end: float) -> str:
+    return f"{_fmt_ts(start)}\u2013{_fmt_ts(end)}"
+
+def _build_clip_data(clips: list) -> tuple:
+    all_themes: list[str] = []
+    all_systems: list[str] = []
+    phase_counts: dict[str, int] = {}
+
+    for c in clips:
+        p1 = c.get("pass_1_output") or {}
+        for t in (p1.get("tactical_themes") or []):
+            if t not in all_themes:
+                all_themes.append(t)
+        system = p1.get("attacking_system") or p1.get("defensive_system")
+        if system and system not in all_systems:
+            all_systems.append(system)
+        clip_phase = c.get("phase") or "Unspecified"
+        phase_counts[clip_phase] = phase_counts.get(clip_phase, 0) + 1
+
+    phase_dist = ", ".join(
+        f'{p}: {n} clip{"s" if n != 1 else ""}' for p, n in phase_counts.items()
+    )
+
+    parts = []
+    for c in clips:
+        p2: dict = {}
+        try:
+            p2 = json.loads(c.get("analysis_output") or "{}")
+        except Exception:
+            pass
+        p1 = c.get("pass_1_output") or {}
+        ts = _clip_timestamp(c.get("start_time", 0), c.get("end_time", 0))
+        quality = p1.get("quality_indicators") or "mixed"
+
+        lines = [f'clip_id: "{c["id"]}" | timestamp: "{ts}" | quality: {quality} | significance: {p2.get("significance", "?")}']
+        if c.get("phase"):
+            lines.append(f'phase: {c["phase"]}')
+        if c.get("field_zone"):
+            lines.append(f'field_zone: {c["field_zone"]}')
+        system = p1.get("attacking_system") or p1.get("defensive_system")
+        if system:
+            lines.append(f"system: {system}")
+        if p1.get("pre_play_structure"):
+            lines.append(f'structure: {p1["pre_play_structure"]}')
+        if p1.get("decision_point"):
+            lines.append(f'decision_point: {p1["decision_point"]}')
+        if p1.get("breakdown_moment"):
+            lines.append(f'breakdown_moment: {p1["breakdown_moment"]}')
+        p1_themes = p1.get("tactical_themes") or []
+        if p1_themes:
+            lines.append(f'tactical_themes: {", ".join(str(t) for t in p1_themes)}')
+        p1_patterns = p1.get("patterns_observed") or []
+        if p1_patterns:
+            lines.append(f'patterns: {" | ".join(str(p) for p in p1_patterns)}')
+        if p2.get("intent"):
+            lines.append(f'intent: {p2["intent"]}')
+        if p2.get("tactical_breakdown"):
+            lines.append(f'tactical_breakdown: {p2["tactical_breakdown"]}')
+        if p2.get("execution_analysis"):
+            lines.append(f'execution_analysis: {p2["execution_analysis"]}')
+        worked = p2.get("what_worked") or []
+        didnt = p2.get("what_didnt_work") or []
+        if worked:
+            lines.append(f'what_worked: {json.dumps(worked)}')
+        if didnt:
+            lines.append(f'what_didnt_work: {json.dumps(didnt)}')
+        if p2.get("coaching_insight"):
+            lines.append(f'coaching_insight: {p2["coaching_insight"]}')
+        parts.append("\n".join(lines))
+
+    return "\n\n---\n\n".join(parts), all_themes, all_systems, phase_dist
+
+
+def _call_claude(system_prompt: str, user_prompt: str) -> str:
+    resp = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+        },
+        json={
+            "model": "claude-sonnet-4-6",
+            "max_tokens": 12000,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+        },
+        timeout=300,
+    )
+    if not resp.ok:
+        err = resp.json().get("error", {}).get("message", "AI API error")
+        raise HTTPException(status_code=500, detail=err)
+    return resp.json()["content"][0]["text"]
+
+
+def _parse_report(text: str) -> tuple:
+    import re
+    match = re.search(r'\{\s*"report_type"[\s\S]*\}', text)
+    if not match:
+        raise HTTPException(status_code=500, detail="No JSON found in AI response")
+    cot = text[:text.index(match.group(0))].strip()
+    clean = match.group(0).replace("```json", "").replace("```", "").strip()
+    try:
+        report_data = json.loads(clean)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {e}")
+    return report_data, cot
+
+
+def _inject_clip_urls(report_data: dict, clip_url_map: dict) -> list:
+    phases = report_data.get("phases") or []
+    for phase_obj in phases:
+        for subsection in (phase_obj.get("subsections") or []):
+            for theme in (subsection.get("themes") or []):
+                for clip in (theme.get("clips") or []):
+                    url = clip_url_map.get(clip.get("clip_id"))
+                    if url:
+                        clip["clip_url"] = url
+    return phases
+
+
+@app.get("/generate-report")
+def get_report(request: Request, match_id: str):
+    user_id = get_user_id(request)
+    result = (
+        supabase.table("session_reports")
+        .select("*")
+        .eq("session_id", match_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return result.data or []
+
+
+@app.post("/generate-report")
+def generate_report(req: GenerateReportRequest, request: Request):
+    user_id = get_user_id(request)
+
+    clips_res = (
+        supabase.table("clips")
+        .select("id, clip_url, start_time, end_time, analysis_output, pass_1_output, phase, field_zone")
+        .eq("match_id", req.match_id)
+        .eq("user_id", user_id)
+        .eq("tag", req.label.lower())
+        .eq("status", "complete")
+        .eq("excluded", False)
+        .not_.is_("analysis_output", "null")
+        .execute()
+    )
+    clips = clips_res.data or []
+    if not clips:
+        return {"noClips": True}
+
+    clip_url_map = {c["id"]: c["clip_url"] for c in clips}
+
+    coach_philosophy = ""
+    team_name = ""
+    if req.team_id:
+        team_res = supabase.table("team_profiles").select("team_name, coach_philosophy").eq("id", req.team_id).limit(1).execute()
+    else:
+        team_res = supabase.table("team_profiles").select("team_name, coach_philosophy").limit(1).execute()
+    if team_res.data:
+        coach_philosophy = team_res.data[0].get("coach_philosophy") or ""
+        team_name = team_res.data[0].get("team_name") or ""
+
+    clip_lines, all_themes, all_systems, phase_dist = _build_clip_data(clips)
+    phase = req.label.lower()
+
+    context_header = "\n".join(filter(None, [
+        f"Team: {team_name}" if team_name else "",
+        f"Coach philosophy (contextual lens only): {coach_philosophy}" if coach_philosophy else "",
+    ]))
+
+    system_prompt = """You are an elite rugby performance analyst producing professional coaching reports for a semi-professional coaching team.
+
+Your job is to analyse tactical patterns and strategic tendencies — not to describe events. A coach already knows what happened. They need to know WHY it happened: what system was in play, where the structure broke down, whether this is a systemic issue or an execution error, and what the team needs to do about it.
+
+TONE AND LANGUAGE
+Write like a head coach speaking directly to their coaching staff — confident, clear, and rugby-literate.
+Use standard rugby terminology where it adds precision (gain line, breakdown, first receiver, line speed, set piece, transition, ruck, pod, channel). Do not overload with jargon — if a plain word works, use it.
+Be assertive. Say "the defence broke down at the gain line" not "it appears the defence may have struggled". Avoid hedging language.
+Never use filler phrases: "it is evident that", "this demonstrates", "notably", "it is worth mentioning", "overall".
+Write in third person about the team ("the team", "their attack", "the defence") — not "your team".
+
+Be concise and direct. Every sentence must earn its place — no padding, no restating the obvious.
+Depth over breadth. Two well-evidenced themes with genuine tactical insight are worth more than five surface observations.
+Do not describe end results. Analyse causes and structural patterns.
+High-significance clips (8–10) carry more evidential weight — prioritise them when selecting clips per theme.
+Return ONLY valid JSON. No markdown. No preamble."""
+
+    synthesis_prompt = f"""{(context_header + chr(10) + chr(10)) if context_header else ""}DOMINANT THEMES OBSERVED ACROSS MATCH (from video analysis):
+{", ".join(all_themes) if all_themes else "None identified"}
+
+SYSTEMS OBSERVED:
+{", ".join(all_systems) if all_systems else "Not identified"}
+
+PHASE DISTRIBUTION:
+{phase_dist or "Not recorded"}
+
+CLIPS ({len(clips)} total — each includes video analysis brief and coaching analysis):
+{clip_lines}
+
+STEP 1 — ANALYSIS (respond in plain text before the JSON)
+Before writing the report, reason through the following:
+
+First, enumerate ALL candidate themes you can identify — positive and negative — across the full clip set. List every distinct structural pattern, even if it only appears in 1–2 clips. Do not filter yet.
+
+Then reason through:
+- Which of these candidate themes are genuinely recurring (multiple clips or high significance)?
+- Which clips cluster together and why — what is the shared structural pattern?
+- Is the dominant pattern a SYSTEM issue (design or structure) or an EXECUTION issue (individual skill or decision)?
+- What is the single most important message for the coaching team this week?
+- What is the balance between set piece and open play issues?
+- Which positive themes are distinct structural mechanisms that deserve separate entries rather than being merged?
+
+STEP 2 — REPORT (after your Step 1 reasoning, output the JSON report)
+
+After your Step 1 analysis, return the JSON report. No markdown fences around the JSON:
+{{
+  "report_type": "match",
+  "phases": [
+    {{
+      "name": "{phase}",
+      "executive_summary": {{
+        "identity": "2-3 sentences on {('attacking' if phase == 'attack' else 'defensive')} identity",
+        "key_message": "single most important coaching takeaway — 1 sentence",
+        "trends": ["dominant pattern 1", "dominant pattern 2", "dominant pattern 3"]
+      }},
+      "system_overview": {{
+        "description": "2-3 sentences synthesising the overall {('attacking' if phase == 'attack' else 'defensive')} system",
+        "bullets": ["structural observation 1", "structural observation 2", "structural observation 3"]
+      }},
+      "subsections": [
+        {{
+          "name": "Key Takeaways",
+          "themes": [{{"title": "3-5 word theme title", "sentiment": "positive | negative", "summary": ["key observation bullet 1", "key observation bullet 2"], "clips": []}}]
+        }},
+        {{
+          "name": "Positives",
+          "themes": [{{"title": "3-5 word theme title", "summary": ["tactical observation bullet 1", "tactical observation bullet 2"], "enhance": "1-2 sentences on how to build this", "clips": []}}]
+        }},
+        {{
+          "name": "Work Ons",
+          "themes": [{{"title": "3-5 word theme title", "type": "System | Execution | Hybrid", "summary": ["tactical observation bullet 1", "tactical observation bullet 2"], "amend": "1-2 sentences of specific actionable coaching instruction", "clips": []}}]
+        }}
+      ],
+      "training_focus": [
+        {{"title": "short drill focus title", "drill_type": "type of session or drill format", "reason": "1 sentence", "source": "work_on"}},
+        {{"title": "short drill focus title", "drill_type": "type of session or drill format", "reason": "1 sentence", "source": "positive"}}
+      ]
+    }}
+  ]
+}}"""
+
+    text = _call_claude(system_prompt, synthesis_prompt)
+    report_data, cot = _parse_report(text)
+    phases = _inject_clip_urls(report_data, clip_url_map)
+
+    final_data = {
+        "format": "direct",
+        "cot": cot,
+        "phases": phases,
+        "systems_observed": all_systems,
+        "phase_distribution": phase_dist,
+    }
+
+    saved = (
+        supabase.table("session_reports")
+        .upsert(
+            {"session_id": req.match_id, "report_type": phase, "user_id": user_id, "report_data": final_data},
+            on_conflict="session_id,report_type",
+        )
+        .execute()
+    )
+    return saved.data[0] if saved.data else final_data
+
+
+@app.get("/generate-opposition-report")
+def get_opposition_report(request: Request, match_id: str):
+    user_id = get_user_id(request)
+    result = (
+        supabase.table("session_reports")
+        .select("*")
+        .eq("session_id", match_id)
+        .eq("user_id", user_id)
+        .in_("report_type", ["opp_attack", "opp_defence"])
+        .execute()
+    )
+    return result.data or []
+
+
+@app.post("/generate-opposition-report")
+def generate_opposition_report(req: GenerateOppositionReportRequest, request: Request):
+    user_id = get_user_id(request)
+
+    opp_tag = f"opp_{req.label.lower()}"
+    clips_res = (
+        supabase.table("clips")
+        .select("id, clip_url, start_time, end_time, analysis_output, pass_1_output, phase, field_zone")
+        .eq("match_id", req.match_id)
+        .eq("user_id", user_id)
+        .eq("tag", opp_tag)
+        .eq("status", "complete")
+        .eq("excluded", False)
+        .not_.is_("analysis_output", "null")
+        .execute()
+    )
+    clips = clips_res.data or []
+    if not clips:
+        return {"noClips": True}
+
+    clip_url_map = {c["id"]: c["clip_url"] for c in clips}
+    clip_lines, all_themes, all_systems, phase_dist = _build_clip_data(clips)
+    phase = req.label.lower()
+
+    system_prompt = """You are an elite rugby performance analyst producing professional scouting reports for a semi-professional coaching team.
+
+Your job is to analyse the OPPOSITION's tactical patterns and tendencies — identifying their strengths to prepare for and their vulnerabilities to exploit. All analysis is from OUR team's perspective. Every observation must be grounded in the clip evidence.
+
+TONE AND LANGUAGE
+Write like a head coach speaking directly to their coaching staff — confident, clear, and rugby-literate.
+Be assertive. Avoid hedging language.
+Never use filler phrases: "it is evident that", "this demonstrates", "notably".
+Write in third person about the opposition ("they", "their attack", "the defence").
+
+Be concise and direct. Every sentence must earn its place.
+Return ONLY valid JSON. No markdown. No preamble."""
+
+    synthesis_prompt = f"""OPPOSITION THEMES OBSERVED (from video analysis):
+{", ".join(all_themes) if all_themes else "None identified"}
+
+SYSTEMS OBSERVED:
+{", ".join(all_systems) if all_systems else "Not identified"}
+
+PHASE DISTRIBUTION:
+{phase_dist or "Not recorded"}
+
+CLIPS ({len(clips)} total — opposition {phase} sequences):
+{clip_lines}
+
+STEP 1 — ANALYSIS (respond in plain text before the JSON)
+Enumerate ALL candidate themes — strengths and vulnerabilities. Then reason through which are genuinely recurring, what their {phase} identity is, and the single most important piece of intel for our coaching team.
+
+STEP 2 — REPORT (after your Step 1 reasoning, output the JSON report)
+
+No markdown fences around the JSON:
+{{
+  "report_type": "opposition",
+  "phases": [
+    {{
+      "name": "{phase}",
+      "executive_summary": {{
+        "identity": "1-2 sentences on their {phase} identity",
+        "key_message": "single most important scouting intel — 1 sentence",
+        "trends": ["dominant pattern 1", "dominant pattern 2", "dominant pattern 3"]
+      }},
+      "system_overview": {{
+        "description": "1-2 sentences on their {phase} system",
+        "bullets": ["structural observation 1", "structural observation 2", "structural observation 3"]
+      }},
+      "subsections": [
+        {{
+          "name": "Key Takeaways",
+          "themes": [{{"title": "3-5 word theme title", "sentiment": "positive | negative", "summary": ["intel bullet 1", "intel bullet 2"], "clips": []}}]
+        }},
+        {{
+          "name": "Strengths",
+          "themes": [{{"title": "3-5 word theme title", "summary": ["observation bullet 1", "observation bullet 2"], "prepare": "1 sentence — how we counteract this threat", "clips": []}}]
+        }},
+        {{
+          "name": "Vulnerabilities",
+          "themes": [{{"title": "3-5 word theme title", "type": "System | Execution | Hybrid", "summary": ["vulnerability bullet 1", "vulnerability bullet 2"], "exploit": "1 sentence — how we attack this weakness", "clips": []}}]
+        }}
+      ],
+      "preparation_focus": [
+        {{"title": "short preparation focus title", "drill_type": "type of session or drill format", "reason": "one short clause", "source": "strength"}},
+        {{"title": "short preparation focus title", "drill_type": "type of session or drill format", "reason": "one short clause", "source": "vulnerability"}}
+      ]
+    }}
+  ]
+}}"""
+
+    text = _call_claude(system_prompt, synthesis_prompt)
+    report_data, cot = _parse_report(text)
+    phases = _inject_clip_urls(report_data, clip_url_map)
+
+    report_type = f"opp_{req.label.lower()}"
+    final_data = {
+        "format": "direct",
+        "cot": cot,
+        "phases": phases,
+        "systems_observed": all_systems,
+        "phase_distribution": phase_dist,
+    }
+
+    saved = (
+        supabase.table("session_reports")
+        .upsert(
+            {"session_id": req.match_id, "report_type": report_type, "user_id": user_id, "report_data": final_data},
+            on_conflict="session_id,report_type",
+        )
+        .execute()
+    )
+    return saved.data[0] if saved.data else final_data

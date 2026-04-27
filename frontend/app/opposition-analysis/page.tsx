@@ -42,7 +42,7 @@ function OpponentDetail({ opponent }: { opponent: Opponent }) {
     async function load() {
       setLoading(true);
       try {
-        const reportsRes = await fetch(`/api/generate-opposition-report?match_id=${encodeURIComponent(opponent.id)}`);
+        const reportsRes = await apiFetch(`${API}/generate-opposition-report?match_id=${encodeURIComponent(opponent.id)}`);
         if (reportsRes.ok) setReports(await reportsRes.json());
       } catch { /* non-fatal */ }
       finally { setLoading(false); }
@@ -55,7 +55,7 @@ function OpponentDetail({ opponent }: { opponent: Opponent }) {
     setGenError("");
     const label = tag === "opp_attack" ? "Attack" : "Defence";
     try {
-      const res = await fetch("/api/generate-opposition-report", {
+      const res = await apiFetch(`${API}/generate-opposition-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ match_id: opponent.id, label }),

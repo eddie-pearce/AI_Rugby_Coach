@@ -41,7 +41,7 @@ function MatchDetail({ match }: { match: Match }) {
     async function load() {
       setLoading(true);
       try {
-        const reportsRes = await fetch(`/api/generate-report?match_id=${encodeURIComponent(match.id)}`);
+        const reportsRes = await apiFetch(`${API}/generate-report?match_id=${encodeURIComponent(match.id)}`);
         if (reportsRes.ok) setReports(await reportsRes.json());
       } catch { /* non-fatal */ }
       finally { setLoading(false); }
@@ -53,7 +53,7 @@ function MatchDetail({ match }: { match: Match }) {
     setGenerating(true);
     setGenError("");
     try {
-      const res = await fetch("/api/generate-report", {
+      const res = await apiFetch(`${API}/generate-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ match_id: match.id, label: tag.charAt(0).toUpperCase() + tag.slice(1) }),
