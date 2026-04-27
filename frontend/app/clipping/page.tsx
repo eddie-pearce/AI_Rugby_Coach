@@ -166,7 +166,7 @@ function MatchDropdown({ matches, selectedId, onSelect, onCreated, onDeleted, mo
 
   return (
     <div className="relative" ref={containerRef}>
-      <p className="text-white/40 text-xs mb-2">{Noun}</p>
+      <p className="text-white/40 text-xs mb-2">Create/Select {Noun}</p>
 
       {/* Trigger */}
       <button
