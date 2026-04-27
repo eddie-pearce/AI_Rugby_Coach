@@ -775,29 +775,6 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
                   </button>
                 </div>
 
-                {/* Manual time inputs */}
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <p className="text-white/40 text-xs mb-1">In (seconds)</p>
-                    <input
-                      type="number" min="0" step="0.1"
-                      value={markIn ?? ""}
-                      onChange={(e) => setMarkIn(e.target.value === "" ? null : Number(e.target.value))}
-                      placeholder="0.0"
-                      className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/50 font-mono"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-white/40 text-xs mb-1">Out (seconds)</p>
-                    <input
-                      type="number" min="0" step="0.1"
-                      value={markOut ?? ""}
-                      onChange={(e) => setMarkOut(e.target.value === "" ? null : Number(e.target.value))}
-                      placeholder="0.0"
-                      className="w-full bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/50 font-mono"
-                    />
-                  </div>
-                </div>
 
                 {markIn !== null && markOut !== null && markOut > markIn && (
                   <p className="text-white/40 text-xs text-center">
