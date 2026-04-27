@@ -1607,9 +1607,10 @@ def _inject_clip_urls(report_data: dict, clip_url_map: dict) -> list:
         for subsection in (phase_obj.get("subsections") or []):
             for theme in (subsection.get("themes") or []):
                 for clip in (theme.get("clips") or []):
-                    url = clip_url_map.get(clip.get("clip_id"))
-                    if url:
-                        clip["clip_url"] = url
+                    if isinstance(clip, dict):
+                        url = clip_url_map.get(clip.get("clip_id"))
+                        if url:
+                            clip["clip_url"] = url
     return phases
 
 
