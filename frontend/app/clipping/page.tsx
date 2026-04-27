@@ -955,18 +955,6 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
             <div className="bg-white/5 border border-white/10 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-white font-semibold text-base">Saved Clips</h2>
-                {!loadingClips && matchId && clips.some((c) => c.match_id === matchId) && (
-                  <button
-                    onClick={handleBulkReanalyse}
-                    disabled={bulkAnalysing}
-                    title="Re-analyse all clips for the selected match"
-                    className="text-xs text-white/40 hover:text-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {bulkAnalysing && bulkProgress
-                      ? `Re-analysing… ${bulkProgress.done}/${bulkProgress.total}`
-                      : "Re-analyse match"}
-                  </button>
-                )}
               </div>
 
               {/* Filters */}
