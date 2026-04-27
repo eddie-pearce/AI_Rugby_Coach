@@ -133,10 +133,15 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     try {
+      // Create an independent blob URL so the hidden recording video doesn't
+      // share the browser's media pipeline with the main player.
+      const srcBlob = await fetch(item.videoUrl).then((r) => r.blob());
+      const recordingUrl = URL.createObjectURL(srcBlob);
+
       // Record at 1× speed using a hidden video element so Gemini gets correct timing
       const clipBlob = await new Promise<Blob>((resolve, reject) => {
         const hidden = document.createElement("video");
-        hidden.src = item.videoUrl;
+        hidden.src = recordingUrl;
         hidden.muted = true;
         hidden.style.display = "none";
         document.body.appendChild(hidden);
@@ -146,6 +151,7 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
           if (document.body.contains(hidden)) {
             document.body.removeChild(hidden);
           }
+          URL.revokeObjectURL(recordingUrl);
         };
 
         // Register cancel fn for this recording phase
