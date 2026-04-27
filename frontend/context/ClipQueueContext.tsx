@@ -186,7 +186,7 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
               ? "video/webm;codecs=vp9,opus"
               : "video/webm";
 
-            const recorder = new MediaRecorder(stream, { mimeType });
+            const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 });
             const chunks: BlobPart[] = [];
             const duration = item.markOut - item.markIn;
 
