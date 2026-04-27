@@ -735,7 +735,7 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
                 </span>
                 <button
                   onClick={handleChangeVideo}
-                  className="text-white/30 text-xs hover:text-white/70 transition-colors shrink-0 ml-3 underline underline-offset-2"
+                  className="text-white/50 text-sm hover:text-orange-400 transition-colors shrink-0 ml-3 underline underline-offset-2"
                 >
                   Change video
                 </button>
