@@ -59,9 +59,11 @@ export function useClipQueue() {
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 export function ClipQueueProvider({ children }: { children: ReactNode }) {
+  const CONCURRENCY = 3;
+
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const queueRef = useRef<QueueItem[]>([]);
-  const isProcessingRef = useRef(false);
+  const activeCountRef = useRef(0);
 
   // Video file + url
   const [videoFile, setVideoFileState] = useState<File | null>(null);
@@ -115,14 +117,10 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
 
   // ── Queue processor ──
 
-  const processNext = useCallback(async () => {
-    const item = queueRef.current.find((i) => i.status === "queued");
-    if (!item) {
-      isProcessingRef.current = false;
-      return;
-    }
+  const tryStartNextRef = useRef<() => void>(() => {});
 
-    isProcessingRef.current = true;
+  const processItem = useCallback(async (item: QueueItem) => {
+    activeCountRef.current++;
 
     const updateItem = (patch: Partial<QueueItem>) => {
       updateQueue((prev) =>
@@ -312,10 +310,21 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
       tryRevoke(item.videoUrl);
     }
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    processNext();
+    activeCountRef.current--;
+    tryStartNextRef.current();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const tryStartNext = useCallback(() => {
+    while (activeCountRef.current < CONCURRENCY) {
+      const next = queueRef.current.find((i) => i.status === "queued");
+      if (!next) break;
+      processItem(next);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processItem]);
+
+  tryStartNextRef.current = tryStartNext;
 
   // ── cancelItem ──
 
@@ -351,7 +360,7 @@ export function ClipQueueProvider({ children }: { children: ReactNode }) {
     };
 
     updateQueue((prev) => [...prev, item]);
-    if (!isProcessingRef.current) processNext();
+    tryStartNext();
   }
 
   return (
