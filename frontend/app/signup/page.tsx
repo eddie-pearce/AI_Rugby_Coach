@@ -62,7 +62,7 @@ export default function SignupPage() {
 
         {confirmed && (
           <div className="bg-white/10 border border-white/20 rounded-lg px-4 py-3 mb-6 text-center">
-            <p className="text-white text-sm font-medium">Confirmation email sent</p>
+            <p className="text-white text-sm font-medium">Confirmation email sent by Supabase</p>
             <p className="text-white/50 text-xs mt-1">Check your inbox and click the link to complete signup.</p>
           </div>
         )}
