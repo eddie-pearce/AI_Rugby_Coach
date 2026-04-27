@@ -59,7 +59,7 @@ export function useClipQueue() {
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 export function ClipQueueProvider({ children }: { children: ReactNode }) {
-  const CONCURRENCY = 3;
+  const CONCURRENCY = 4;
 
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const queueRef = useRef<QueueItem[]>([]);
