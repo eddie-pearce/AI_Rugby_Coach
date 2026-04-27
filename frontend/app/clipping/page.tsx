@@ -652,7 +652,7 @@ export default function ClippingPage({ fixedMode }: { fixedMode?: ClipMode } = {
           </div>
           <div className="mt-3 flex flex-col gap-1.5">
             {[
-              { n: "1", text: "Upload the full match mp4/mov file using the panel on the left." },
+              { n: "1", text: "Upload the full match mp4/mov file using the panel underneath." },
               { n: "2", text: "Clip significant attack or defence sequences you would like analysed." },
               { n: "3", text: "Use the video player to find the start of a sequence, then press Mark Start." },
               { n: "4", text: "Find the end of the sequence and press Mark End." },
