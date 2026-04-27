@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { createClient } from "@/lib/supabase/client";
 
@@ -25,6 +25,39 @@ interface Report {
 
 type TabType = "attack" | "defence";
 
+// ─── Report progress ──────────────────────────────────────────────────────────
+
+const PROGRESS_STAGES = [
+  { pct: 5,  label: "Fetching clip data…" },
+  { pct: 20, label: "Identifying tactical patterns…" },
+  { pct: 40, label: "Structuring the report…" },
+  { pct: 60, label: "Writing analysis…" },
+  { pct: 80, label: "Refining insights…" },
+  { pct: 92, label: "Finalising…" },
+];
+const PROGRESS_DELAYS = [0, 6000, 16000, 32000, 52000, 72000];
+
+function useReportProgress(loading: boolean) {
+  const [stage, setStage] = useState(0);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    if (loading) {
+      setStage(0);
+      timersRef.current = PROGRESS_DELAYS.map((delay, i) =>
+        setTimeout(() => setStage(i), delay)
+      );
+    } else {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+      setStage(0);
+    }
+    return () => timersRef.current.forEach(clearTimeout);
+  }, [loading]);
+
+  return PROGRESS_STAGES[stage];
+}
+
 // ─── Tab panel ────────────────────────────────────────────────────────────────
 
 interface TabPanelProps {
@@ -39,6 +72,7 @@ interface TabPanelProps {
 
 function TabPanel({ label, matchId, report, loading, noClips, error, onGenerate }: TabPanelProps) {
   const canGenerate = !!matchId && !loading;
+  const progress = useReportProgress(loading);
 
   return (
     <div className="space-y-6">
@@ -95,7 +129,13 @@ function TabPanel({ label, matchId, report, loading, noClips, error, onGenerate 
       {loading && (
         <div className="flex flex-col items-center gap-4 py-16">
           <div className="w-8 h-8 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-          <p className="text-white/40 text-sm">The AI is synthesising the match…</p>
+          <p className="text-white/50 text-sm">{progress.label}</p>
+          <div className="w-64 h-1 bg-white/10 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-white/60 rounded-full transition-all duration-1000 ease-out"
+              style={{ width: `${progress.pct}%` }}
+            />
+          </div>
         </div>
       )}
 

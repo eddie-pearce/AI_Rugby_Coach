@@ -28,6 +28,39 @@ function formatDate(dateStr: string) {
   });
 }
 
+// ─── Report progress ──────────────────────────────────────────────────────────
+
+const PROGRESS_STAGES = [
+  { pct: 5,  label: "Fetching clip data…" },
+  { pct: 20, label: "Identifying tactical patterns…" },
+  { pct: 40, label: "Structuring the report…" },
+  { pct: 60, label: "Writing analysis…" },
+  { pct: 80, label: "Refining insights…" },
+  { pct: 92, label: "Finalising…" },
+];
+const PROGRESS_DELAYS = [0, 6000, 16000, 32000, 52000, 72000];
+
+function useReportProgress(loading: boolean) {
+  const [stage, setStage] = useState(0);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    if (loading) {
+      setStage(0);
+      timersRef.current = PROGRESS_DELAYS.map((delay, i) =>
+        setTimeout(() => setStage(i), delay)
+      );
+    } else {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+      setStage(0);
+    }
+    return () => timersRef.current.forEach(clearTimeout);
+  }, [loading]);
+
+  return PROGRESS_STAGES[stage];
+}
+
 // ─── Match detail ─────────────────────────────────────────────────────────────
 
 function MatchDetail({ match }: { match: Match }) {
@@ -36,6 +69,7 @@ function MatchDetail({ match }: { match: Match }) {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
+  const progress = useReportProgress(generating);
 
   useEffect(() => {
     async function load() {
@@ -123,7 +157,19 @@ function MatchDetail({ match }: { match: Match }) {
             </button>
           </div>
           {genError && <p className="text-red-400 text-sm mb-4">{genError}</p>}
-          {tagReport?.report_data && (
+          {generating && (
+            <div className="flex flex-col items-center gap-4 py-12">
+              <div className="w-7 h-7 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              <p className="text-white/50 text-sm">{progress.label}</p>
+              <div className="w-56 h-1 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-white/60 rounded-full transition-all duration-1000 ease-out"
+                  style={{ width: `${progress.pct}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {!generating && tagReport?.report_data && (
             "prose" in tagReport.report_data
               ? <ProseReportView prose={(tagReport.report_data as { prose: string }).prose} />
               : "format" in tagReport.report_data && (tagReport.report_data as DirectReport).format === "direct"
