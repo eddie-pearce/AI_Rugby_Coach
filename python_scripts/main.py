@@ -1708,6 +1708,14 @@ Then reason through:
 - What is the balance between set piece and open play issues?
 - Which positive themes are distinct structural mechanisms that deserve separate entries rather than being merged?
 
+CLIP RULES
+- For each theme, select 2–3 clips from the CLIPS list above that most clearly evidence that theme
+- Use the exact clip_id and timestamp values from the CLIPS list — do not invent or modify them
+- relevance_score (1–10): how directly this clip illustrates this specific theme
+- description: 1 sentence — what this clip shows that supports the theme
+- A clip may appear under multiple themes only where it genuinely supports each one
+- If fewer than 2 clips support a theme, merge or drop it
+
 STEP 2 — REPORT (after your Step 1 reasoning, output the JSON report)
 
 After your Step 1 analysis, return the JSON report. No markdown fences around the JSON:
@@ -1728,15 +1736,15 @@ After your Step 1 analysis, return the JSON report. No markdown fences around th
       "subsections": [
         {{
           "name": "Key Takeaways",
-          "themes": [{{"title": "3-5 word theme title", "sentiment": "positive | negative", "summary": ["key observation bullet 1", "key observation bullet 2"], "clips": []}}]
+          "themes": [{{"title": "3-5 word theme title", "sentiment": "positive | negative", "summary": ["key observation bullet 1", "key observation bullet 2"], "clips": [{{"clip_id": "<clip_id from CLIPS above>", "timestamp": "<timestamp from input>", "description": "1 sentence: what this clip shows that supports the theme", "relevance_score": 9}}]}}]
         }},
         {{
           "name": "Positives",
-          "themes": [{{"title": "3-5 word theme title", "summary": ["tactical observation bullet 1", "tactical observation bullet 2"], "enhance": "1-2 sentences on how to build this", "clips": []}}]
+          "themes": [{{"title": "3-5 word theme title", "summary": ["tactical observation bullet 1", "tactical observation bullet 2"], "enhance": "1-2 sentences on how to build this", "clips": [{{"clip_id": "<clip_id from CLIPS above>", "timestamp": "<timestamp from input>", "description": "1 sentence: what this clip shows that supports the theme", "relevance_score": 8}}]}}]
         }},
         {{
           "name": "Work Ons",
-          "themes": [{{"title": "3-5 word theme title", "type": "System | Execution | Hybrid", "summary": ["tactical observation bullet 1", "tactical observation bullet 2"], "amend": "1-2 sentences of specific actionable coaching instruction", "clips": []}}]
+          "themes": [{{"title": "3-5 word theme title", "type": "System | Execution | Hybrid", "summary": ["tactical observation bullet 1", "tactical observation bullet 2"], "amend": "1-2 sentences of specific actionable coaching instruction", "clips": [{{"clip_id": "<clip_id from CLIPS above>", "timestamp": "<timestamp from input>", "description": "1 sentence: what this clip shows that supports the theme", "relevance_score": 7}}]}}]
         }}
       ],
       "training_focus": [
@@ -1836,6 +1844,14 @@ CLIPS ({len(clips)} total — opposition {phase} sequences):
 STEP 1 — ANALYSIS (respond in plain text before the JSON)
 Enumerate ALL candidate themes — strengths and vulnerabilities. Then reason through which are genuinely recurring, what their {phase} identity is, and the single most important piece of intel for our coaching team.
 
+CLIP RULES
+- For each theme, select 2–3 clips from the CLIPS list above that most clearly evidence that theme
+- Use the exact clip_id and timestamp values from the CLIPS list — do not invent or modify them
+- relevance_score (1–10): how directly this clip illustrates this specific theme
+- description: 1 sentence — what this clip shows that supports the theme
+- A clip may appear under multiple themes only where it genuinely supports each one
+- If fewer than 2 clips support a theme, merge or drop it
+
 STEP 2 — REPORT (after your Step 1 reasoning, output the JSON report)
 
 No markdown fences around the JSON:
@@ -1856,15 +1872,15 @@ No markdown fences around the JSON:
       "subsections": [
         {{
           "name": "Key Takeaways",
-          "themes": [{{"title": "3-5 word theme title", "sentiment": "positive | negative", "summary": ["intel bullet 1", "intel bullet 2"], "clips": []}}]
+          "themes": [{{"title": "3-5 word theme title", "sentiment": "positive | negative", "summary": ["intel bullet 1", "intel bullet 2"], "clips": [{{"clip_id": "<clip_id from CLIPS above>", "timestamp": "<timestamp from input>", "description": "1 sentence: what this clip shows that supports the theme", "relevance_score": 9}}]}}]
         }},
         {{
           "name": "Strengths",
-          "themes": [{{"title": "3-5 word theme title", "summary": ["observation bullet 1", "observation bullet 2"], "prepare": "1 sentence — how we counteract this threat", "clips": []}}]
+          "themes": [{{"title": "3-5 word theme title", "summary": ["observation bullet 1", "observation bullet 2"], "prepare": "1 sentence — how we counteract this threat", "clips": [{{"clip_id": "<clip_id from CLIPS above>", "timestamp": "<timestamp from input>", "description": "1 sentence: what this clip shows that supports the theme", "relevance_score": 8}}]}}]
         }},
         {{
           "name": "Vulnerabilities",
-          "themes": [{{"title": "3-5 word theme title", "type": "System | Execution | Hybrid", "summary": ["vulnerability bullet 1", "vulnerability bullet 2"], "exploit": "1 sentence — how we attack this weakness", "clips": []}}]
+          "themes": [{{"title": "3-5 word theme title", "type": "System | Execution | Hybrid", "summary": ["vulnerability bullet 1", "vulnerability bullet 2"], "exploit": "1 sentence — how we attack this weakness", "clips": [{{"clip_id": "<clip_id from CLIPS above>", "timestamp": "<timestamp from input>", "description": "1 sentence: what this clip shows that supports the theme", "relevance_score": 7}}]}}]
         }}
       ],
       "preparation_focus": [
