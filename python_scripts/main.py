@@ -1601,16 +1601,29 @@ def _parse_report(text: str) -> tuple:
     return report_data, cot
 
 
-def _inject_clip_urls(report_data: dict, clip_url_map: dict) -> list:
+def _inject_clip_urls(report_data: dict, clip_url_map: dict, clip_meta: dict = None) -> list:
     phases = report_data.get("phases") or []
     for phase_obj in phases:
         for subsection in (phase_obj.get("subsections") or []):
             for theme in (subsection.get("themes") or []):
+                expanded = []
                 for clip in (theme.get("clips") or []):
-                    if isinstance(clip, dict):
+                    if isinstance(clip, str):
+                        # AI returned a plain clip_id string — expand to full object
+                        meta = (clip_meta or {}).get(clip, {})
+                        expanded.append({
+                            "clip_id": clip,
+                            "timestamp": meta.get("timestamp", ""),
+                            "description": "",
+                            "relevance_score": meta.get("significance", 5),
+                            "clip_url": clip_url_map.get(clip),
+                        })
+                    elif isinstance(clip, dict):
                         url = clip_url_map.get(clip.get("clip_id"))
                         if url:
                             clip["clip_url"] = url
+                        expanded.append(clip)
+                theme["clips"] = expanded
     return phases
 
 
@@ -1647,6 +1660,7 @@ def generate_report(req: GenerateReportRequest, request: Request):
         return {"noClips": True}
 
     clip_url_map = {c["id"]: c["clip_url"] for c in clips}
+    clip_meta = {c["id"]: {"timestamp": _clip_timestamp(c.get("start_time", 0), c.get("end_time", 0)), "significance": json.loads(c.get("analysis_output") or "{}").get("significance", 5) if c.get("analysis_output") else 5} for c in clips}
 
     coach_philosophy = ""
     team_name = ""
@@ -1757,7 +1771,7 @@ After your Step 1 analysis, return the JSON report. No markdown fences around th
 
     text = _call_claude(system_prompt, synthesis_prompt)
     report_data, cot = _parse_report(text)
-    phases = _inject_clip_urls(report_data, clip_url_map)
+    phases = _inject_clip_urls(report_data, clip_url_map, clip_meta)
 
     final_data = {
         "format": "direct",
@@ -1813,6 +1827,7 @@ def generate_opposition_report(req: GenerateOppositionReportRequest, request: Re
         return {"noClips": True}
 
     clip_url_map = {c["id"]: c["clip_url"] for c in clips}
+    clip_meta = {c["id"]: {"timestamp": _clip_timestamp(c.get("start_time", 0), c.get("end_time", 0)), "significance": json.loads(c.get("analysis_output") or "{}").get("significance", 5) if c.get("analysis_output") else 5} for c in clips}
     clip_lines, all_themes, all_systems, phase_dist = _build_clip_data(clips)
     phase = req.label.lower()
 
@@ -1893,7 +1908,7 @@ No markdown fences around the JSON:
 
     text = _call_claude(system_prompt, synthesis_prompt)
     report_data, cot = _parse_report(text)
-    phases = _inject_clip_urls(report_data, clip_url_map)
+    phases = _inject_clip_urls(report_data, clip_url_map, clip_meta)
 
     report_type = f"opp_{req.label.lower()}"
     final_data = {
